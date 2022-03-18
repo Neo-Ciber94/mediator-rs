@@ -1,7 +1,12 @@
 #![allow(clippy::needless_doctest_main)]
 //! # mediator-rs
+//!
+//! ![https://github.com/Neo-Ciber94/mediator-rs/blob/main/LICENSE](https://img.shields.io/badge/license-MIT-blue)
+//! ![https://docs.rs/mediator/latest/mediator/](https://img.shields.io/badge/docs-passing-brightgreen)
+//! ![https://crates.io/crates/mediator](https://img.shields.io/badge/crates.io-v0.1-brightgreen)
+//!
 //! An implementation of the Mediator pattern in Rust
-//! inspired in C# [MediatR](https://github.com/jbogard/MediatR/tree/master/src/MediatR).
+//! inspired in C# [MediatR](https://github.com/jbogard/MediatR).
 //!
 //! ## Mediator Pattern
 //! https://en.wikipedia.org/wiki/Mediator_pattern

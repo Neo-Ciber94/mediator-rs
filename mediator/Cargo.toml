@@ -1,7 +1,7 @@
 [package]
 name = "mediator"
 description = "An implementation of the Mediator pattern in Rust"
-keywords = ["rust-patterns", ]
+keywords = ["rust-patterns"]
 license = "MIT"
 version = "0.1.1"
 edition = "2021"

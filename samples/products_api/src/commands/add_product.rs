@@ -1,9 +1,9 @@
+use crate::events::ProductAddedEvent;
 use crate::models::product::Product;
 use crate::services::redis_service::SharedRedisService;
 use mediator::{DefaultMediator, Mediator, Request, RequestHandler};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use serde::{Serialize, Deserialize};
-use crate::events::ProductAddedEvent;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddProductCommand {
@@ -30,7 +30,9 @@ impl RequestHandler<AddProductCommand, Product> for AddProductRequestHandler {
             .set(product.id.to_string(), product.clone())
             .expect("Could not set product in redis");
 
-        self.1.publish(ProductAddedEvent(product.clone())).expect("Could not publish event");
+        self.1
+            .publish(ProductAddedEvent(product.clone()))
+            .expect("Could not publish event");
 
         product
     }

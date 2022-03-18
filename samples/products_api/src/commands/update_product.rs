@@ -1,8 +1,8 @@
-use uuid::Uuid;
-use serde::{Serialize, Deserialize};
-use mediator::{DefaultMediator, Mediator, Request, RequestHandler};
-use crate::{Product, SharedRedisService};
 use crate::events::ProductUpdatedEvent;
+use crate::{Product, SharedRedisService};
+use mediator::{DefaultMediator, Mediator, Request, RequestHandler};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateProductCommand {
@@ -24,9 +24,13 @@ impl RequestHandler<UpdateProductCommand, Option<Product>> for UpdateProductRequ
         product.price = command.price;
         product.updated_at = chrono::Utc::now();
 
-        redis.set(&id, product.clone()).expect("Could not set the product");
+        redis
+            .set(&id, product.clone())
+            .expect("Could not set the product");
 
-        self.1.publish(ProductUpdatedEvent(product.clone())).expect("Could not publish the event");
+        self.1
+            .publish(ProductUpdatedEvent(product.clone()))
+            .expect("Could not publish the event");
 
         Some(product)
     }

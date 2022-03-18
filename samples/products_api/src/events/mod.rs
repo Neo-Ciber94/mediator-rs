@@ -1,5 +1,5 @@
-use mediator::Event;
 use crate::Product;
+use mediator::Event;
 
 #[derive(Debug, Clone)]
 pub struct ProductAddedEvent(pub Product);
