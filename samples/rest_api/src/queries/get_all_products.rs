@@ -1,6 +1,6 @@
-use mediator::{Request, RequestHandler};
-use crate::BoxedProductService;
 use crate::models::Product;
+use crate::BoxedProductService;
+use mediator::{Request, RequestHandler};
 
 pub struct GetAllProductsQuery;
 impl Request<Vec<Product>> for GetAllProductsQuery {}

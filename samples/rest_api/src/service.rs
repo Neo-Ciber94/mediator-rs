@@ -1,16 +1,16 @@
+use crate::models::Product;
 use std::collections::HashMap;
 use uuid::Uuid;
-use crate::models::Product;
 
 #[derive(Debug, Clone)]
 pub struct ProductService {
-    products: HashMap<Uuid, Product>
+    products: HashMap<Uuid, Product>,
 }
 
 impl ProductService {
     pub fn new() -> ProductService {
         ProductService {
-            products: HashMap::new()
+            products: HashMap::new(),
         }
     }
 

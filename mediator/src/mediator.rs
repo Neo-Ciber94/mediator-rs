@@ -14,5 +14,3 @@ pub trait Mediator {
     where
         E: Event + 'static;
 }
-
-

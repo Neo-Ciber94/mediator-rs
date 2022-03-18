@@ -1,6 +1,5 @@
-
 /// Represents an application event.
-pub trait Event : Clone {}
+pub trait Event: Clone {}
 
 /// A handler for application events.
 pub trait EventHandler<E: Event> {

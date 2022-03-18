@@ -1,2 +1,2 @@
 [workspace]
-members = ["mediator", "sample"]
+members = ["mediator", "samples/*"]

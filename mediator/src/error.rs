@@ -3,4 +3,3 @@ pub enum Error {
     NotFound,
     TypeMismatch,
 }
-

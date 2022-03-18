@@ -1,7 +1,7 @@
-use uuid::Uuid;
-use mediator::{Request, RequestHandler};
-use crate::BoxedProductService;
 use crate::models::Product;
+use crate::BoxedProductService;
+use mediator::{Request, RequestHandler};
+use uuid::Uuid;
 
 pub struct DeleteProductCommand(pub Uuid);
 impl Request<Option<Product>> for DeleteProductCommand {}

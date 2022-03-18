@@ -14,7 +14,7 @@ impl Product {
         Product {
             id: Uuid::new_v4(),
             name,
-            price
+            price,
         }
     }
 
