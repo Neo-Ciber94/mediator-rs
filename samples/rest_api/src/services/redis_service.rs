@@ -19,17 +19,17 @@ impl<V> RedisService<V> where V: Serialize + DeserializeOwned {
         Self { client, base_key, _marker: PhantomData }
     }
 
-    pub fn set<S: Into<String>>(&mut self, key: S, value: V) -> Result<(), redis::RedisError> {
+    pub fn set<S: AsRef<str>>(&mut self, key: S, value: V) -> Result<(), redis::RedisError> {
         let json = serde_json::to_string(&value).map_err(|e| {
             RedisError::from((redis::ErrorKind::TypeError, "Failed to serialize value", e.to_string()))
         })?;
 
-        let key = format!("{}:{}", self.base_key, key.into());
+        let key = format!("{}:{}", self.base_key, key.as_ref());
         self.client.set(key, json)
     }
 
-    pub fn delete<S: Into<String>>(&mut self, key: S) -> Result<Option<V>, redis::RedisError> {
-        let key = format!("{}:{}", self.base_key, key.into());
+    pub fn delete<S: AsRef<str>>(&mut self, key: S) -> Result<Option<V>, redis::RedisError> {
+        let key = format!("{}:{}", self.base_key, key.as_ref());
         let json: Option<String> = self.client.get(key.clone())?;
 
         match json {
@@ -44,8 +44,8 @@ impl<V> RedisService<V> where V: Serialize + DeserializeOwned {
         }
     }
 
-    pub fn get<S: Into<String>>(&mut self, key: S) -> Result<Option<V>, redis::RedisError> {
-        let key = format!("{}:{}", self.base_key, key.into());
+    pub fn get<S: AsRef<str>>(&mut self, key: S) -> Result<Option<V>, redis::RedisError> {
+        let key = format!("{}:{}", self.base_key, key.as_ref());
         let json : Option<String> = self.client.get(key)?;
 
         match json {

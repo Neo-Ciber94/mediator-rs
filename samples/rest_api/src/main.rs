@@ -3,10 +3,12 @@ mod endpoints;
 mod models;
 mod queries;
 mod services;
+mod events;
 
 use std::sync::{Arc, Mutex};
 use crate::services::redis_service::{RedisService, SharedRedisService};
-use actix_web::{middleware::Logger, web, App, HttpServer};
+use actix_web::{web, App, HttpServer, middleware};
+use actix_web::middleware::TrailingSlash;
 use actix_web::web::Data;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -23,12 +25,16 @@ async fn main() -> std::io::Result<()> {
     let mediator = create_mediator_service(&redis_service);
 
     HttpServer::new(move || {
-        App::new().wrap(Logger::default())
+        App::new()
+            .wrap(middleware::NormalizePath::new(TrailingSlash::Always))
+            .wrap(middleware::Logger::default())
             .app_data(Data::new(mediator.clone()))
             .app_data(Data::new(redis_service.clone()))
             .service(
             web::scope("/api/products")
                 .service(endpoints::products::create)
+                .service(endpoints::products::update)
+                .service(endpoints::products::delete)
                 .service(endpoints::products::get)
                 .service(endpoints::products::get_all),
         )
@@ -43,8 +49,8 @@ fn create_mediator_service(redis: &SharedRedisService<Product>) -> SharedMediato
     mediator.add_handler(queries::get_product::GetProductRequestHandler(redis.clone()));
     mediator.add_handler(queries::get_all_products::GetAllProductsRequestHandler(redis.clone()));
     mediator.add_handler(commands::add_product::AddProductRequestHandler(redis.clone()));
-    //mediator.add_handler(commands::update_product::UpdateProductRequestHandler(redis.clone()));
-    //mediator.add_handler(commands::delete_product::DeleteProductRequestHandler(redis.clone()));
+    mediator.add_handler(commands::update_product::UpdateProductRequestHandler(redis.clone()));
+    mediator.add_handler(commands::delete_product::DeleteProductRequestHandler(redis.clone()));
 
     Arc::new(Mutex::new(mediator))
 }

@@ -1,9 +1,11 @@
-use actix_web::{get, post, Responder, HttpResponse, web};
+use actix_web::{get, post, put, delete, Responder, HttpResponse, web};
 use actix_web::web::{Data, Json};
 use uuid::Uuid;
 use mediator::Mediator;
 use crate::SharedMediator;
 use crate::commands::add_product::AddProductCommand;
+use crate::commands::delete_product::DeleteProductCommand;
+use crate::commands::update_product::UpdateProductCommand;
 use crate::queries::get_all_products::GetAllProductsRequest;
 use crate::queries::get_product::GetProductRequest;
 
@@ -17,10 +19,33 @@ pub async fn create(mediator: Data<SharedMediator>, body: Json<AddProductCommand
         .json(result)
 }
 
+#[put("/")]
+pub async fn update(mediator: Data<SharedMediator>, body: Json<UpdateProductCommand>) -> impl Responder {
+    let mut mediator = mediator.try_lock().expect("Unable to lock mediator");
+    let result = mediator.send(body.into_inner()).expect("Unable to send command");
+
+    match result {
+        Some(product) => HttpResponse::Ok().json(product),
+        None => HttpResponse::NotFound().finish()
+    }
+}
+
+#[delete("/{id}")]
+pub async fn delete(path: web::Path<Uuid>, mediator: Data<SharedMediator>) -> impl Responder {
+    let uuid = path.into_inner();
+    let mut mediator = mediator.try_lock().expect("Unable to lock mediator");
+    let result = mediator.send(DeleteProductCommand(uuid)).expect("Unable to send command");
+
+    match result {
+        Some(product) => HttpResponse::Ok().json(product),
+        None => HttpResponse::NotFound().finish()
+    }
+}
+
+
 #[get("/{id}")]
 pub async fn get(path: web::Path<Uuid>, mediator: Data<SharedMediator>) -> impl Responder {
     let uuid = path.into_inner();
-    println!("uuid: {}", uuid);
     let mut mediator = mediator.try_lock().expect("Unable to lock mediator");
     let result = mediator.send(GetProductRequest(uuid)).expect("Unable to send command");
 
