@@ -125,8 +125,9 @@ impl EventHandlerWrapper {
 ///   }
 /// }
 ///
-/// let mut mediator = DefaultMediator::new();
-/// mediator.add_handler(GetNextIdHandler);
+/// let mut mediator = DefaultMediator::builder()
+///     .add_handler(GetNextIdHandler)
+///     .build();
 ///
 /// assert_eq!(Ok(1), mediator.send(GetNextId));
 /// assert_eq!(Ok(2), mediator.send(GetNextId));
@@ -153,80 +154,32 @@ impl EventHandlerWrapper {
 ///     }
 /// }
 ///
-/// let mut mediator = DefaultMediator::new();
 /// let mut service = ProductService(vec![], mediator.clone());
-///
-/// mediator.subscribe_fn(move |event: ProductAddedEvent| {
-///     println!("Product added: {}", event.0.name);
-/// });
+/// let mut mediator = DefaultMediator::builder()
+///     .subscribe_fn(move |event: ProductAddedEvent| {
+///         println!("Product added: {}", event.0.name);
+///     })
+///    .build();
 ///
 /// service.add("Microwave");   // Product added: Microwave
 /// service.add("Toaster");     // Product added: Toaster
 /// ```
-///
 #[derive(Clone)]
 pub struct DefaultMediator {
     request_handlers: SharedHandler<RequestHandlerWrapper>,
     event_handlers: SharedHandler<Vec<EventHandlerWrapper>>,
 }
 
+// SAFETY: the `request_handlers` and `event_handlers` are wrapped in Arc and Mutex.
 unsafe impl Send for DefaultMediator {}
 
+// SAFETY: the `request_handlers` and `event_handlers` are wrapped in Arc and Mutex.
 unsafe impl Sync for DefaultMediator {}
 
 impl DefaultMediator {
-    /// Constructs a new `DefaultMediator`.
-    pub fn new() -> Self {
-        DefaultMediator {
-            request_handlers: Arc::new(Mutex::new(HashMap::new())),
-            event_handlers: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-
-    /// Registers a request handler.
-    pub fn add_handler<Req, Res, H>(&mut self, handler: H)
-    where
-        Res: 'static,
-        Req: Request<Res> + 'static,
-        H: RequestHandler<Req, Res> + 'static,
-    {
-        let mut handlers = self.request_handlers.lock().unwrap();
-        handlers.insert(TypeId::of::<Req>(), RequestHandlerWrapper::new(handler));
-    }
-
-    /// Registers a request handler from a function.
-    pub fn add_handler_fn<Req, Res, F>(&mut self, handler: F)
-    where
-        Res: 'static,
-        Req: Request<Res> + 'static,
-        F: FnMut(Req) -> Res + 'static,
-    {
-        let mut handlers = self.request_handlers.lock().unwrap();
-        handlers.insert(TypeId::of::<Req>(), RequestHandlerWrapper::from_fn(handler));
-    }
-
-    /// Registers an event handler.
-    pub fn subscribe<E, H>(&mut self, handler: H)
-    where
-        E: Event + 'static,
-        H: EventHandler<E> + 'static,
-    {
-        let mut handlers = self.event_handlers.lock().unwrap();
-        let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
-
-        event_handlers.push(EventHandlerWrapper::new(handler));
-    }
-
-    /// Registers an event handler from a function.
-    pub fn subscribe_fn<E, F>(&mut self, handler: F)
-    where
-        E: Event + 'static,
-        F: FnMut(E) + 'static,
-    {
-        let mut handlers = self.event_handlers.lock().unwrap();
-        let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
-
-        event_handlers.push(EventHandlerWrapper::from_fn(handler));
+    /// Gets a [DefaultMediator] builder.
+    pub fn builder() -> DefaultMediatorBuilder {
+        DefaultMediatorBuilder::new()
     }
 }
 
@@ -274,5 +227,147 @@ impl Mediator for DefaultMediator {
         }
 
         Ok(())
+    }
+}
+
+/// A builder for the [DefaultMediator].
+pub struct DefaultMediatorBuilder {
+    request_handlers: HashMap<TypeId, RequestHandlerWrapper>,
+    event_handlers: HashMap<TypeId, Vec<EventHandlerWrapper>>,
+    defer_request_handlers: Vec<(TypeId, Box<dyn FnOnce(DefaultMediator) -> RequestHandlerWrapper>)>,
+    defer_event_handlers: Vec<(TypeId, Box<dyn FnOnce(DefaultMediator) -> EventHandlerWrapper>)>,
+}
+
+impl DefaultMediatorBuilder {
+    /// Constructs a new `DefaultMediatorBuilder`.
+    pub fn new() -> Self {
+        DefaultMediatorBuilder {
+            request_handlers: HashMap::new(),
+            event_handlers: HashMap::new(),
+            defer_request_handlers: Vec::new(),
+            defer_event_handlers: Vec::new(),
+        }
+    }
+
+    /// Registers a request handler.
+    pub fn add_handler<Req, Res, H>(mut self, handler: H) -> Self
+    where
+        Res: 'static,
+        Req: Request<Res> + 'static,
+        H: RequestHandler<Req, Res> + 'static,
+    {
+        self.request_handlers.insert(TypeId::of::<Req>(), RequestHandlerWrapper::new(handler));
+        self
+    }
+
+    /// Registers a request handler from a function.
+    pub fn add_handler_fn<Req, Res, F>(mut self, handler: F) -> Self
+    where
+        Res: 'static,
+        Req: Request<Res> + 'static,
+        F: FnMut(Req) -> Res + 'static,
+    {
+        self.request_handlers.insert(TypeId::of::<Req>(), RequestHandlerWrapper::from_fn(handler));
+        self
+    }
+
+    /// Register a request handler that will be deferred until the mediator is constructed.
+    pub fn add_deferred_handler<Req, Res, H, F>(mut self, f: F) -> Self
+    where
+        Res: 'static,
+        Req: Request<Res> + 'static,
+        H: FnMut(Req) -> Res + 'static,
+        F: Fn(DefaultMediator) -> H + 'static,
+    {
+        let type_id = TypeId::of::<Req>();
+        let f = Box::new(move |m| RequestHandlerWrapper::from_fn(f(m)));
+        self.defer_request_handlers.push((type_id, f));
+        self
+    }
+
+    /// Registers a request handler from a function that will be deferred until the mediator is constructed.
+    pub fn add_deferred_handler_fn<Req, Res, H, F>(mut self, f: F) -> Self
+    where
+        Res: 'static,
+        Req: Request<Res> + 'static,
+        H: RequestHandler<Req, Res> + 'static,
+        F: Fn(DefaultMediator) -> H + 'static,
+    {
+        let type_id = TypeId::of::<Req>();
+        let f = Box::new(move |m| RequestHandlerWrapper::new(f(m)));
+        self.defer_request_handlers.push((type_id, f));
+        self
+    }
+
+    /// Registers an event handler.
+    pub fn subscribe<E, H>(mut self, handler: H) -> Self
+    where
+        E: Event + 'static,
+        H: EventHandler<E> + 'static,
+    {
+        let handlers = &mut self.event_handlers;
+        let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
+
+        event_handlers.push(EventHandlerWrapper::new(handler));
+        self
+    }
+
+    /// Registers an event handler from a function.
+    pub fn subscribe_fn<E, F>(mut self, handler: F) -> Self
+    where
+        E: Event + 'static,
+        F: FnMut(E) + 'static,
+    {
+        let handlers = &mut self.event_handlers;
+        let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
+
+        event_handlers.push(EventHandlerWrapper::from_fn(handler));
+        self
+    }
+
+    /// Registers an event handler that will be deferred until the mediator is constructed.
+    pub fn subscribe_deferred<E, H, F>(mut self, f: F) -> Self
+    where
+        E: Event + 'static,
+        H: EventHandler<E> + 'static,
+        F: Fn(DefaultMediator) -> H + 'static,
+    {
+        let type_id = TypeId::of::<E>();
+        let f = Box::new(move |m| EventHandlerWrapper::new(f(m)));
+        self.defer_event_handlers.push((type_id, f));
+        self
+    }
+
+    /// Registers an event handler from a function that will be deferred until the mediator is constructed.
+    pub fn subscribe_fn_deferred<E, H, F>(mut self, f: F) -> Self
+    where
+        E: Event + 'static,
+        H: FnMut(E) + 'static,
+        F: Fn(DefaultMediator) -> H + 'static,
+    {
+        let type_id = TypeId::of::<E>();
+        let f = Box::new(move |m| EventHandlerWrapper::from_fn(f(m)));
+        self.defer_event_handlers.push((type_id, f));
+        self
+    }
+
+    /// Builds a `DefaultMediator`.
+    pub fn build(self) -> DefaultMediator {
+        let mediator = DefaultMediator {
+            request_handlers: Arc::new(Mutex::new( self.request_handlers)),
+            event_handlers: Arc::new(Mutex::new(self.event_handlers)),
+        };
+
+        for (type_id, f) in self.defer_request_handlers {
+            let mut handlers = mediator.request_handlers.lock().unwrap();
+            handlers.insert(type_id, f(mediator.clone()));
+        }
+
+        for (type_id, f) in self.defer_event_handlers {
+            let mut handlers = mediator.event_handlers.lock().unwrap();
+            handlers.entry(type_id).or_insert_with(Vec::new).push(f(mediator.clone()));
+        }
+
+        mediator
     }
 }
