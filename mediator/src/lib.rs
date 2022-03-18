@@ -1,9 +1,16 @@
+#![allow(clippy::needless_doctest_main)]
 //! # mediator-rs
 //! An implementation of the Mediator pattern in Rust
 //! inspired in C# [MediatR](https://github.com/jbogard/MediatR/tree/master/src/MediatR).
 //!
 //! ## Mediator Pattern
 //! https://en.wikipedia.org/wiki/Mediator_pattern
+//!
+//! ## Usage
+//! ```toml
+//! [dependencies]
+//! mediator = "0.1"
+//! ```
 //!
 //! ## Example
 //! ```rust

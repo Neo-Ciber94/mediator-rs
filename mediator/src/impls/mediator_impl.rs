@@ -9,6 +9,7 @@ type SharedHandler<H> = Arc<Mutex<HashMap<TypeId, H>>>;
 // To provide type safety without unsafe code we box all: the function, the params and the result.
 #[derive(Clone)]
 struct RequestHandlerWrapper {
+    #[allow(clippy::type_complexity)]
     handler: Arc<Mutex<dyn FnMut(Box<dyn Any>) -> Box<dyn Any>>>,
 }
 
@@ -61,6 +62,7 @@ impl RequestHandlerWrapper {
 // To provide type safety without unsafe code we box all: the function, the params and the result.
 #[derive(Clone)]
 struct EventHandlerWrapper {
+    #[allow(clippy::type_complexity)]
     handler: Arc<Mutex<dyn FnMut(Box<dyn Any>)>>,
 }
 
@@ -304,7 +306,9 @@ impl DefaultMediatorBuilder {
         H: EventHandler<E> + 'static,
     {
         let mut handlers_lock = self.inner.event_handlers.lock().unwrap();
-        let event_handlers = handlers_lock.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
+        let event_handlers = handlers_lock
+            .entry(TypeId::of::<E>())
+            .or_insert_with(Vec::new);
         event_handlers.push(EventHandlerWrapper::new(handler));
         drop(handlers_lock);
         self
@@ -317,7 +321,9 @@ impl DefaultMediatorBuilder {
         F: FnMut(E) + 'static,
     {
         let mut handlers_lock = self.inner.event_handlers.lock().unwrap();
-        let event_handlers = handlers_lock.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
+        let event_handlers = handlers_lock
+            .entry(TypeId::of::<E>())
+            .or_insert_with(Vec::new);
         event_handlers.push(EventHandlerWrapper::from_fn(handler));
         drop(handlers_lock);
         self
@@ -348,5 +354,11 @@ impl DefaultMediatorBuilder {
     /// Builds a `DefaultMediator`.
     pub fn build(self) -> DefaultMediator {
         self.inner
+    }
+}
+
+impl Default for DefaultMediatorBuilder {
+    fn default() -> Self {
+        DefaultMediatorBuilder::new()
     }
 }

@@ -29,7 +29,7 @@ impl<M: Mediator> RequestHandler<GetNextTwoIdsRequest, (u64, u64)>
 fn main() {
     let mut mediator = DefaultMediator::builder()
         .add_handler(GetNextIdRequestHandler)
-        .add_handler_deferred(|m| GetNextTwoIdsRequestHandler(m))
+        .add_handler_deferred(GetNextTwoIdsRequestHandler)
         .build();
 
     println!("{:?}", mediator.send(GetNextIdRequest).unwrap());
