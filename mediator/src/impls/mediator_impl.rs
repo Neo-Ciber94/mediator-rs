@@ -154,12 +154,13 @@ impl EventHandlerWrapper {
 ///     }
 /// }
 ///
-/// let mut service = ProductService(vec![], mediator.clone());
 /// let mut mediator = DefaultMediator::builder()
 ///     .subscribe_fn(move |event: ProductAddedEvent| {
 ///         println!("Product added: {}", event.0.name);
 ///     })
 ///    .build();
+///
+/// let mut service = ProductService(vec![], mediator.clone());
 ///
 /// service.add("Microwave");   // Product added: Microwave
 /// service.add("Toaster");     // Product added: Toaster
@@ -177,7 +178,7 @@ unsafe impl Send for DefaultMediator {}
 unsafe impl Sync for DefaultMediator {}
 
 impl DefaultMediator {
-    /// Gets a [DefaultMediator] builder.
+    // Gets a [DefaultMediator] builder.
     pub fn builder() -> DefaultMediatorBuilder {
         DefaultMediatorBuilder::new()
     }
@@ -232,142 +233,120 @@ impl Mediator for DefaultMediator {
 
 /// A builder for the [DefaultMediator].
 pub struct DefaultMediatorBuilder {
-    request_handlers: HashMap<TypeId, RequestHandlerWrapper>,
-    event_handlers: HashMap<TypeId, Vec<EventHandlerWrapper>>,
-    defer_request_handlers: Vec<(TypeId, Box<dyn FnOnce(DefaultMediator) -> RequestHandlerWrapper>)>,
-    defer_event_handlers: Vec<(TypeId, Box<dyn FnOnce(DefaultMediator) -> EventHandlerWrapper>)>,
+    inner: DefaultMediator,
 }
 
 impl DefaultMediatorBuilder {
     /// Constructs a new `DefaultMediatorBuilder`.
     pub fn new() -> Self {
         DefaultMediatorBuilder {
-            request_handlers: HashMap::new(),
-            event_handlers: HashMap::new(),
-            defer_request_handlers: Vec::new(),
-            defer_event_handlers: Vec::new(),
+            inner: DefaultMediator {
+                request_handlers: SharedHandler::default(),
+                event_handlers: SharedHandler::default(),
+            },
         }
     }
 
     /// Registers a request handler.
-    pub fn add_handler<Req, Res, H>(mut self, handler: H) -> Self
+    pub fn add_handler<Req, Res, H>(self, handler: H) -> Self
     where
         Res: 'static,
         Req: Request<Res> + 'static,
         H: RequestHandler<Req, Res> + 'static,
     {
-        self.request_handlers.insert(TypeId::of::<Req>(), RequestHandlerWrapper::new(handler));
+        let mut handlers_lock = self.inner.request_handlers.lock().unwrap();
+        handlers_lock.insert(TypeId::of::<Req>(), RequestHandlerWrapper::new(handler));
+        drop(handlers_lock);
         self
     }
 
     /// Registers a request handler from a function.
-    pub fn add_handler_fn<Req, Res, F>(mut self, handler: F) -> Self
+    pub fn add_handler_fn<Req, Res, F>(self, handler: F) -> Self
     where
         Res: 'static,
         Req: Request<Res> + 'static,
         F: FnMut(Req) -> Res + 'static,
     {
-        self.request_handlers.insert(TypeId::of::<Req>(), RequestHandlerWrapper::from_fn(handler));
+        let mut handlers_lock = self.inner.request_handlers.lock().unwrap();
+        handlers_lock.insert(TypeId::of::<Req>(), RequestHandlerWrapper::from_fn(handler));
+        drop(handlers_lock);
         self
     }
 
-    /// Register a request handler that will be deferred until the mediator is constructed.
-    pub fn add_deferred_handler<Req, Res, H, F>(mut self, f: F) -> Self
+    /// Register a request handler using a copy of the mediator.
+    pub fn add_handler_deferred<Req, Res, H, F>(self, f: F) -> Self
+    where
+        Res: 'static,
+        Req: Request<Res> + 'static,
+        H: RequestHandler<Req, Res> + 'static,
+        F: Fn(DefaultMediator) -> H,
+    {
+        let handler = f(self.inner.clone());
+        self.add_handler(handler)
+    }
+
+    /// Registers a request handler from a function using a copy of the mediator.
+    pub fn add_handler_fn_deferred<Req, Res, H, F>(self, f: F) -> Self
     where
         Res: 'static,
         Req: Request<Res> + 'static,
         H: FnMut(Req) -> Res + 'static,
         F: Fn(DefaultMediator) -> H + 'static,
     {
-        let type_id = TypeId::of::<Req>();
-        let f = Box::new(move |m| RequestHandlerWrapper::from_fn(f(m)));
-        self.defer_request_handlers.push((type_id, f));
-        self
-    }
-
-    /// Registers a request handler from a function that will be deferred until the mediator is constructed.
-    pub fn add_deferred_handler_fn<Req, Res, H, F>(mut self, f: F) -> Self
-    where
-        Res: 'static,
-        Req: Request<Res> + 'static,
-        H: RequestHandler<Req, Res> + 'static,
-        F: Fn(DefaultMediator) -> H + 'static,
-    {
-        let type_id = TypeId::of::<Req>();
-        let f = Box::new(move |m| RequestHandlerWrapper::new(f(m)));
-        self.defer_request_handlers.push((type_id, f));
-        self
+        let handler = f(self.inner.clone());
+        self.add_handler_fn(handler)
     }
 
     /// Registers an event handler.
-    pub fn subscribe<E, H>(mut self, handler: H) -> Self
+    pub fn subscribe<E, H>(self, handler: H) -> Self
     where
         E: Event + 'static,
         H: EventHandler<E> + 'static,
     {
-        let handlers = &mut self.event_handlers;
-        let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
-
+        let mut handlers_lock = self.inner.event_handlers.lock().unwrap();
+        let event_handlers = handlers_lock.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
         event_handlers.push(EventHandlerWrapper::new(handler));
+        drop(handlers_lock);
         self
     }
 
     /// Registers an event handler from a function.
-    pub fn subscribe_fn<E, F>(mut self, handler: F) -> Self
+    pub fn subscribe_fn<E, F>(self, handler: F) -> Self
     where
         E: Event + 'static,
         F: FnMut(E) + 'static,
     {
-        let handlers = &mut self.event_handlers;
-        let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
-
+        let mut handlers_lock = self.inner.event_handlers.lock().unwrap();
+        let event_handlers = handlers_lock.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
         event_handlers.push(EventHandlerWrapper::from_fn(handler));
+        drop(handlers_lock);
         self
     }
 
-    /// Registers an event handler that will be deferred until the mediator is constructed.
-    pub fn subscribe_deferred<E, H, F>(mut self, f: F) -> Self
+    /// Registers an event handler using a copy of the mediator.
+    pub fn subscribe_deferred<E, H, F>(self, f: F) -> Self
     where
         E: Event + 'static,
         H: EventHandler<E> + 'static,
-        F: Fn(DefaultMediator) -> H + 'static,
+        F: Fn(DefaultMediator) -> H,
     {
-        let type_id = TypeId::of::<E>();
-        let f = Box::new(move |m| EventHandlerWrapper::new(f(m)));
-        self.defer_event_handlers.push((type_id, f));
-        self
+        let handler = f(self.inner.clone());
+        self.subscribe(handler)
     }
 
-    /// Registers an event handler from a function that will be deferred until the mediator is constructed.
-    pub fn subscribe_fn_deferred<E, H, F>(mut self, f: F) -> Self
+    /// Registers an event handler from a function using a copy of the mediator.
+    pub fn subscribe_fn_deferred<E, H, F>(self, f: F) -> Self
     where
         E: Event + 'static,
         H: FnMut(E) + 'static,
         F: Fn(DefaultMediator) -> H + 'static,
     {
-        let type_id = TypeId::of::<E>();
-        let f = Box::new(move |m| EventHandlerWrapper::from_fn(f(m)));
-        self.defer_event_handlers.push((type_id, f));
-        self
+        let handler = f(self.inner.clone());
+        self.subscribe_fn(handler)
     }
 
     /// Builds a `DefaultMediator`.
     pub fn build(self) -> DefaultMediator {
-        let mediator = DefaultMediator {
-            request_handlers: Arc::new(Mutex::new( self.request_handlers)),
-            event_handlers: Arc::new(Mutex::new(self.event_handlers)),
-        };
-
-        for (type_id, f) in self.defer_request_handlers {
-            let mut handlers = mediator.request_handlers.lock().unwrap();
-            handlers.insert(type_id, f(mediator.clone()));
-        }
-
-        for (type_id, f) in self.defer_event_handlers {
-            let mut handlers = mediator.event_handlers.lock().unwrap();
-            handlers.entry(type_id).or_insert_with(Vec::new).push(f(mediator.clone()));
-        }
-
-        mediator
+        self.inner
     }
 }

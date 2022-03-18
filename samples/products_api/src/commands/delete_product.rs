@@ -6,8 +6,8 @@ use crate::events::ProductDeletedEvent;
 pub struct DeleteProductCommand(pub Uuid);
 impl Request<Option<Product>> for DeleteProductCommand {}
 
-pub struct DeleteProductRequestHandler<M: Mediator>(pub SharedRedisService<Product>, pub M);
-impl<M: Mediator> RequestHandler<DeleteProductCommand, Option<Product>> for DeleteProductRequestHandler<M> {
+pub struct DeleteProductRequestHandler(pub SharedRedisService<Product>, pub DefaultMediator);
+impl RequestHandler<DeleteProductCommand, Option<Product>> for DeleteProductRequestHandler {
     fn handle(&mut self, request: DeleteProductCommand) -> Option<Product> {
         let result = self.0.try_lock()
             .expect("Could not lock the redis service")
@@ -15,7 +15,7 @@ impl<M: Mediator> RequestHandler<DeleteProductCommand, Option<Product>> for Dele
             .expect("Could not delete the product");
 
         if let Some(deleted) = result.clone() {
-            self.1.publish(ProductDeletedEvent(deleted));
+            self.1.publish(ProductDeletedEvent(deleted)).expect("Could not publish the event");
         }
 
         result

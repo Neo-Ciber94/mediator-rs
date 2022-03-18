@@ -13,8 +13,8 @@ pub struct AddProductCommand {
 
 impl Request<Product> for AddProductCommand {}
 
-pub struct AddProductRequestHandler<M: Mediator>(pub SharedRedisService<Product>, pub M);
-impl<M: Mediator> RequestHandler<AddProductCommand, Product> for AddProductRequestHandler<M> {
+pub struct AddProductRequestHandler(pub SharedRedisService<Product>, pub DefaultMediator);
+impl RequestHandler<AddProductCommand, Product> for AddProductRequestHandler {
     fn handle(&mut self, command: AddProductCommand) -> Product {
         let product = Product {
             id: Uuid::new_v4(),

@@ -10,7 +10,7 @@ use crate::services::redis_service::{RedisService, SharedRedisService};
 use actix_web::middleware::TrailingSlash;
 use actix_web::web::Data;
 use actix_web::{middleware, web, App, HttpServer};
-use mediator::DefaultMediator;
+use mediator::{DefaultMediator, DefaultMediatorBuilder};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
@@ -55,38 +55,25 @@ fn create_mediator_service(redis: &SharedRedisService<Product>) -> SharedMediato
     use events::*;
     use queries::*;
 
-    let mut mediator = DefaultMediator::new();
-
-    mediator.add_handler(get_product::GetProductRequestHandler(redis.clone()));
-    mediator.add_handler(get_all_products::GetAllProductsRequestHandler(
-        redis.clone(),
-    ));
-
-    mediator.add_handler(add_product::AddProductRequestHandler(
-        redis.clone(),
-        mediator.clone(),
-    ));
-    mediator.add_handler(update_product::UpdateProductRequestHandler(
-        redis.clone(),
-        mediator.clone(),
-    ));
-    mediator.add_handler(delete_product::DeleteProductRequestHandler(
-        redis.clone(),
-        mediator.clone(),
-    ));
-
-    // Events
-    mediator.subscribe_fn(|event: ProductAddedEvent| {
-        log::info!("Added: {} - {}", event.0.name, event.0.id);
-    });
-
-    mediator.subscribe_fn(|event: ProductUpdatedEvent| {
-        log::info!("Updated: {} - {}", event.0.name, event.0.id);
-    });
-
-    mediator.subscribe_fn(|event: ProductDeletedEvent| {
-        log::info!("Deleted: {} - {}", event.0.name, event.0.id);
-    });
+    let redis = redis.clone();
+    let mediator = DefaultMediatorBuilder::new()
+        // Requests
+        .add_handler(GetProductRequestHandler(redis.clone()))
+        .add_handler(GetAllProductsRequestHandler(redis.clone()))
+        .add_handler_deferred(|m| AddProductRequestHandler(redis.clone(), m))
+        .add_handler_deferred(|m| UpdateProductRequestHandler(redis.clone(), m))
+        .add_handler_deferred(|m| DeleteProductRequestHandler(redis.clone(), m))
+        // Events
+        .subscribe_fn(|event: ProductAddedEvent| {
+            log::info!("Added: {} - {}", event.0.name, event.0.id);
+        })
+        .subscribe_fn(|event: ProductUpdatedEvent| {
+            log::info!("Updated: {} - {}", event.0.name, event.0.id);
+        })
+        .subscribe_fn(|event: ProductDeletedEvent| {
+            log::info!("Deleted: {} - {}", event.0.name, event.0.id);
+        })
+        .build();
 
     Arc::new(Mutex::new(mediator))
 }

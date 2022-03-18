@@ -13,8 +13,8 @@ pub struct UpdateProductCommand {
 
 impl Request<Option<Product>> for UpdateProductCommand {}
 
-pub struct UpdateProductRequestHandler<M: Mediator>(pub SharedRedisService<Product>, pub M);
-impl<M: Mediator> RequestHandler<UpdateProductCommand, Option<Product>> for UpdateProductRequestHandler<M> {
+pub struct UpdateProductRequestHandler(pub SharedRedisService<Product>, pub DefaultMediator);
+impl RequestHandler<UpdateProductCommand, Option<Product>> for UpdateProductRequestHandler {
     fn handle(&mut self, command: UpdateProductCommand) -> Option<Product> {
         let mut redis = self.0.try_lock().expect("Could not lock the redis service");
 
@@ -26,7 +26,7 @@ impl<M: Mediator> RequestHandler<UpdateProductCommand, Option<Product>> for Upda
 
         redis.set(&id, product.clone()).expect("Could not set the product");
 
-        self.1.publish(ProductUpdatedEvent(product.clone()));
+        self.1.publish(ProductUpdatedEvent(product.clone())).expect("Could not publish the event");
 
         Some(product)
     }

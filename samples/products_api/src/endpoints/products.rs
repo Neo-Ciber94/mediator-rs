@@ -2,12 +2,9 @@ use actix_web::{get, post, put, delete, Responder, HttpResponse, web};
 use actix_web::web::{Data, Json};
 use uuid::Uuid;
 use mediator::Mediator;
+use crate::commands::{AddProductCommand, DeleteProductCommand, UpdateProductCommand};
+use crate::queries::{GetAllProductsRequest, GetProductRequest};
 use crate::SharedMediator;
-use crate::commands::add_product::AddProductCommand;
-use crate::commands::delete_product::DeleteProductCommand;
-use crate::commands::update_product::UpdateProductCommand;
-use crate::queries::get_all_products::GetAllProductsRequest;
-use crate::queries::get_product::GetProductRequest;
 
 #[post("/")]
 pub async fn create(mediator: Data<SharedMediator>, body: Json<AddProductCommand>) -> impl Responder {

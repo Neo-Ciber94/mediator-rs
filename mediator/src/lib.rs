@@ -7,76 +7,48 @@
 //!
 //! ## Example
 //! ```rust
-//! use std::sync::{Arc, Mutex};
-//! use mediator::{Mediator, DefaultMediator, Event, Request, RequestHandler};
+//! use mediator::{DefaultMediator, Mediator, Request, Event, RequestHandler, EventHandler};
 //!
-//! #[derive(Debug, Clone, Eq, PartialEq)]
-//! struct Product(String);
+//! #[derive(Clone, Debug)]
+//! enum Op {
+//!  Add(f32, f32),
+//!  Sub(f32, f32),
+//!  Mul(f32, f32),
+//!  Div(f32, f32),
+//! }
 //!
-//! struct ProductService(Vec<Product>, DefaultMediator);
+//! struct MathRequest(Op);
+//! impl Request<Option<f32>> for MathRequest {}
 //!
-//! // Events
-//! #[derive(Clone)]
-//! struct ProductAddedEvent(Product);
-//! impl Event for ProductAddedEvent {}
+//! #[derive(Clone, Debug)]
+//! struct MathEvent(Op, Option<f32>);
+//! impl Event for MathEvent {}
 //!
-//! #[derive(Clone)]
-//! struct ProductDeletedEvent(Product);
-//! impl Event for ProductDeletedEvent {}
+//! struct MathRequestHandler(DefaultMediator);
+//! impl RequestHandler<MathRequest, Option<f32>> for MathRequestHandler {
+//!     fn handle(&mut self, req: MathRequest) -> Option<f32> {
+//!         let result = match req.0 {
+//!             Op::Add(a, b) => Some(a + b),
+//!             Op::Sub(a, b) => Some(a - b),
+//!             Op::Mul(a, b) => Some(a * b),
+//!             Op::Div(a, b) => {
+//!                 if b == 0.0 { None } else { Some(a / b) }
+//!             }
+//!         };
 //!
-//! // Requests
-//! type SharedProductService = Arc<Mutex<ProductService>>;
-//!
-//! struct AddProductRequest(String);
-//! impl Request<Product> for AddProductRequest {}
-//!
-//! struct AddProductRequestHandler(SharedProductService, DefaultMediator);
-//! impl RequestHandler<AddProductRequest, Product> for AddProductRequestHandler {
-//!     fn handle(&mut self, request: AddProductRequest) -> Product {
-//!         let mut product_service = self.0.lock().unwrap();
-//!         let product = Product(request.0);
-//!         product_service.0.push(product.clone());
-//!         self.1.publish(ProductAddedEvent(product.clone()));
-//!         product
+//!         self.0.publish(MathEvent(req.0, result));
+//!         result
 //!     }
 //! }
 //!
-//! struct DeleteProductRequest(String);
-//! impl Request<Option<Product>> for DeleteProductRequest {}
-//!
-//! struct DeleteProductRequestHandler(SharedProductService, DefaultMediator);
-//! impl RequestHandler<DeleteProductRequest, Option<Product>> for DeleteProductRequestHandler {
-//!     fn handle(&mut self, req: DeleteProductRequest) -> Option<Product> {
-//!         let mut product_service = self.0.lock().unwrap();
-//!
-//!         if let Some(index) = product_service.0.iter().position(|p| p.0 == req.0) {
-//!             let removed = product_service.0.remove(index);
-//!             self.1.publish(ProductDeletedEvent(removed.clone()));
-//!             Some(removed)
-//!         }
-//!         else {
-//!            None
-//!         }
-//!     }
+//! fn main() {
+//!     let mut mediator = DefaultMediator::builder()
+//!         .add_handler_deferred(|m| MathRequestHandler(m))
+//!         .subscribe_fn(|event: MathEvent| {
+//!            println!("{:?}", event);
+//!          })
+//!         .build();
 //! }
-//!
-//! let mut mediator = DefaultMediator::new();
-//! let mut service = Arc::new(Mutex::new(ProductService(Vec::new(), mediator.clone())));
-//!
-//! mediator.add_handler(AddProductRequestHandler(service.clone(), mediator.clone()));
-//! mediator.add_handler(DeleteProductRequestHandler(service.clone(), mediator.clone()));
-//!
-//! mediator.subscribe_fn(|event: ProductAddedEvent| {
-//!    println!("Product added: {:?}", event.0);
-//! });
-//!
-//! mediator.subscribe_fn(|event: ProductDeletedEvent| {
-//!     println!("Product deleted: {:?}", event.0);
-//! });
-//!
-//! assert_eq!(Ok(Product("Microwave".to_owned())), mediator.send(AddProductRequest("Microwave".to_owned())));
-//! assert_eq!(Ok(Product("Microwave".to_owned())), mediator.send(AddProductRequest("Microwave".to_owned())));
-//! assert_eq!(Ok(Some(Product("Microwave".to_owned()))), mediator.send(DeleteProductRequest("Microwave".to_owned())));
 //! ```
 
 /// A convenient result type.
