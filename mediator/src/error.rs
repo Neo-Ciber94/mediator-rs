@@ -3,7 +3,7 @@ use std::fmt;
 /// Error type for mediator
 #[derive(PartialEq, Eq)]
 pub struct Error {
-    repr: ErrorRepr
+    repr: ErrorRepr,
 }
 
 /// Error kind.
@@ -30,13 +30,13 @@ enum ErrorRepr {
     /// An error with a kind.
     Kind(ErrorKind),
     /// An error with a description.
-    WithDescription(ErrorKind, String)
+    WithDescription(ErrorKind, String),
 }
 
 impl Error {
     pub fn new<S: Into<String>>(kind: ErrorKind, description: S) -> Error {
         Error {
-            repr: ErrorRepr::WithDescription(kind, description.into())
+            repr: ErrorRepr::WithDescription(kind, description.into()),
         }
     }
 }
@@ -44,7 +44,7 @@ impl Error {
 impl From<ErrorKind> for Error {
     fn from(kind: ErrorKind) -> Error {
         Error {
-            repr: ErrorRepr::Kind(kind)
+            repr: ErrorRepr::Kind(kind),
         }
     }
 }
@@ -54,17 +54,15 @@ impl fmt::Display for Error {
         match self.repr {
             ErrorRepr::Kind(ref kind) => {
                 write!(f, "{}", kind.as_str())
-            },
-            ErrorRepr::WithDescription(ref kind, ref description) => {
-                match *kind {
-                    ErrorKind::Unknown => {
-                        write!(f, "{}", description)
-                    },
-                    _ => {
-                        write!(f, "{}: {}", kind.as_str(), description)
-                    },
-                }
             }
+            ErrorRepr::WithDescription(ref kind, ref description) => match *kind {
+                ErrorKind::Unknown => {
+                    write!(f, "{}", description)
+                }
+                _ => {
+                    write!(f, "{}: {}", kind.as_str(), description)
+                }
+            },
         }
     }
 }

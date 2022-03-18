@@ -1,8 +1,8 @@
+use crate::error::{Error, ErrorKind};
 use crate::{Event, EventHandler, Mediator, Request, RequestHandler};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use crate::error::{Error, ErrorKind};
 
 type SharedHandler<H> = Arc<Mutex<HashMap<TypeId, H>>>;
 
