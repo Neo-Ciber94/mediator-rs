@@ -1,49 +1,56 @@
-#![allow(dead_code)]
-
 mod commands;
-mod events;
+mod endpoints;
 mod models;
 mod queries;
-mod service;
+mod services;
 
-use crate::commands::add_product::{AddProductCommand, AddProductHandler};
-use crate::commands::delete_product::DeleteProductHandler;
-use crate::commands::update_product::UpdateProductHandler;
-use crate::events::ProductAddedEvent;
-use crate::queries::get_all_products::GetAllProductsHandler;
-use crate::queries::get_product::{GetProductHandler, GetProductQuery};
-use crate::service::ProductService;
-use mediator::{DefaultMediator, Mediator};
 use std::sync::{Arc, Mutex};
+use crate::services::redis_service::{RedisService, SharedRedisService};
+use actix_web::{middleware::Logger, web, App, HttpServer};
+use actix_web::web::Data;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use mediator::DefaultMediator;
+use crate::models::product::Product;
 
-pub type BoxedProductService = Arc<Mutex<ProductService>>;
+pub type SharedMediator = Arc<Mutex<DefaultMediator>>;
 
-fn main() {
-    let product_service = Arc::new(Mutex::new(ProductService::new()));
-    let mut mediator = DefaultMediator::new();
-    init_mediator(&mut mediator, &product_service);
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    env_logger::init_from_env(env_logger::Env::new().default_filter_or("debug"));
 
-    mediator.send(AddProductCommand("Apple", 0.65)).unwrap();
-    mediator.send(AddProductCommand("Pizza", 12.0)).unwrap();
-    mediator.send(AddProductCommand("Coffee", 2.0)).unwrap();
-    mediator.send(AddProductCommand("Milk", 1.5)).unwrap();
+    let redis_service = create_redis_service::<Product>("products");
+    let mediator = create_mediator_service(&redis_service);
 
-    let added = mediator.send(AddProductCommand("Bread", 1.0)).unwrap();
-
-    let result = mediator.send(GetProductQuery(added.id())).unwrap();
-    println!("{:#?}", result);
-
-    println!("{:#?}", product_service.lock().unwrap().get_all());
+    HttpServer::new(move || {
+        App::new().wrap(Logger::default())
+            .app_data(Data::new(mediator.clone()))
+            .app_data(Data::new(redis_service.clone()))
+            .service(
+            web::scope("/api/products")
+                .service(endpoints::products::create)
+                .service(endpoints::products::get)
+                .service(endpoints::products::get_all),
+        )
+    })
+    .bind(("0.0.0.0", 8080))?
+    .run()
+    .await
 }
 
-fn init_mediator(mediator: &mut DefaultMediator, product_service: &BoxedProductService) {
-    mediator.add_handler(GetProductHandler(product_service.clone()));
-    mediator.add_handler(GetAllProductsHandler(product_service.clone()));
-    mediator.add_handler(AddProductHandler(product_service.clone(), mediator.clone()));
-    mediator.add_handler(UpdateProductHandler(product_service.clone()));
-    mediator.add_handler(DeleteProductHandler(product_service.clone()));
+fn create_mediator_service(redis: &SharedRedisService<Product>) -> SharedMediator {
+    let mut mediator = DefaultMediator::new();
+    mediator.add_handler(queries::get_product::GetProductRequestHandler(redis.clone()));
+    mediator.add_handler(queries::get_all_products::GetAllProductsRequestHandler(redis.clone()));
+    mediator.add_handler(commands::add_product::AddProductRequestHandler(redis.clone()));
+    //mediator.add_handler(commands::update_product::UpdateProductRequestHandler(redis.clone()));
+    //mediator.add_handler(commands::delete_product::DeleteProductRequestHandler(redis.clone()));
 
-    mediator.subscribe_fn(|event: ProductAddedEvent| {
-        println!("Product added: {:?}", event);
-    });
+    Arc::new(Mutex::new(mediator))
+}
+
+fn create_redis_service<V>(base_key: &str) -> SharedRedisService<V> where V: Serialize + DeserializeOwned {
+    let client = redis::Client::open("redis://127.0.0.1/").expect("Failed to connect to Redis");
+    let service = RedisService::new(client, base_key.to_owned());
+    Arc::new(Mutex::new(service))
 }
