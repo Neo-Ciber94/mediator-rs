@@ -1,8 +1,9 @@
 use crate::models::product::Product;
 use crate::services::redis_service::SharedRedisService;
-use mediator::{Request, RequestHandler};
+use mediator::{DefaultMediator, Mediator, Request, RequestHandler};
 use uuid::Uuid;
 use serde::{Serialize, Deserialize};
+use crate::events::ProductAddedEvent;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddProductCommand {
@@ -12,8 +13,8 @@ pub struct AddProductCommand {
 
 impl Request<Product> for AddProductCommand {}
 
-pub struct AddProductRequestHandler(pub SharedRedisService<Product>);
-impl RequestHandler<AddProductCommand, Product> for AddProductRequestHandler {
+pub struct AddProductRequestHandler<M: Mediator>(pub SharedRedisService<Product>, pub M);
+impl<M: Mediator> RequestHandler<AddProductCommand, Product> for AddProductRequestHandler<M> {
     fn handle(&mut self, command: AddProductCommand) -> Product {
         let product = Product {
             id: Uuid::new_v4(),
@@ -28,6 +29,8 @@ impl RequestHandler<AddProductCommand, Product> for AddProductRequestHandler {
             .expect("Could not lock redis service")
             .set(product.id.to_string(), product.clone())
             .expect("Could not set product in redis");
+
+        self.1.publish(ProductAddedEvent(product.clone())).expect("Could not publish event");
 
         product
     }
