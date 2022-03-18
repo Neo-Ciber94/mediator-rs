@@ -5,7 +5,7 @@
 //! ## Mediator Pattern
 //! https://en.wikipedia.org/wiki/Mediator_pattern
 //!
-//! ## Usage
+//! ## Example
 //! ```rust
 //! use std::sync::{Arc, Mutex};
 //! use mediator::{Mediator, DefaultMediator, Event, Request, RequestHandler};
