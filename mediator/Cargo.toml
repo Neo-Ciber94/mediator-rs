@@ -1,9 +1,11 @@
 [package]
 name = "mediator"
+description = "An implementation of the Mediator pattern in Rust"
+license = "MIT"
+readme = "README.md"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/Neo-Ciber94/mediator-rs/"
 
 [features]
 impls = []
-
-[dependencies]
