@@ -1,5 +1,5 @@
 [package]
-name = "rest_api"
+name = "products_api"
 version = "0.1.0"
 edition = "2021"
 

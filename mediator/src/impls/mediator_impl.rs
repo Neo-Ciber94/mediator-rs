@@ -7,8 +7,9 @@ type SharedHandler<H> = Arc<Mutex<HashMap<TypeId, H>>>;
 
 // A wrapper around the request handler to handle the request and return the result.
 // To provide type safety without unsafe code we box all: the function, the params and the result.
+#[derive(Clone)]
 struct RequestHandlerWrapper {
-    handler: Box<dyn FnMut(Box<dyn Any>) -> Box<dyn Any>>,
+    handler: Arc<Mutex<dyn FnMut(Box<dyn Any>) -> Box<dyn Any>>>,
 }
 
 impl RequestHandlerWrapper {
@@ -18,11 +19,13 @@ impl RequestHandlerWrapper {
         Req: Request<Res> + 'static,
         H: RequestHandler<Req, Res> + 'static,
     {
+        let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
+            let req = *req.downcast::<Req>().unwrap();
+            Box::new(handler.handle(req))
+        };
+
         RequestHandlerWrapper {
-            handler: Box::new(move |req| {
-                let req = *req.downcast::<Req>().unwrap();
-                Box::new(handler.handle(req))
-            }),
+            handler: Arc::new(Mutex::new(f)),
         }
     }
 
@@ -32,11 +35,13 @@ impl RequestHandlerWrapper {
         Req: Request<Res> + 'static,
         F: FnMut(Req) -> Res + 'static,
     {
+        let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
+            let req: Req = *req.downcast::<Req>().unwrap();
+            Box::new(handler(req))
+        };
+
         RequestHandlerWrapper {
-            handler: Box::new(move |req| {
-                let req = *req.downcast::<Req>().unwrap();
-                Box::new(handler(req))
-            }),
+            handler: Arc::new(Mutex::new(f)),
         }
     }
 
@@ -46,15 +51,17 @@ impl RequestHandlerWrapper {
         Req: Request<Res> + 'static,
     {
         let req = Box::new(req);
-        let res = (self.handler)(req);
+        let mut handler = self.handler.lock().unwrap();
+        let res = (handler)(req);
         res.downcast::<Res>().map(|res| *res).ok()
     }
 }
 
 // A wrapper around the event handler to handle the events.
 // To provide type safety without unsafe code we box all: the function, the params and the result.
+#[derive(Clone)]
 struct EventHandlerWrapper {
-    handler: Box<dyn FnMut(Box<dyn Any>)>,
+    handler: Arc<Mutex<dyn FnMut(Box<dyn Any>)>>,
 }
 
 impl EventHandlerWrapper {
@@ -63,11 +70,13 @@ impl EventHandlerWrapper {
         E: Event + 'static,
         H: EventHandler<E> + 'static,
     {
+        let f = move |event: Box<dyn Any>| {
+            let event = *event.downcast::<E>().unwrap();
+            handler.handle(event);
+        };
+
         EventHandlerWrapper {
-            handler: Box::new(move |event| {
-                let event = *event.downcast::<E>().unwrap();
-                handler.handle(event);
-            }),
+            handler: Arc::new(Mutex::new(f)),
         }
     }
 
@@ -76,11 +85,13 @@ impl EventHandlerWrapper {
         E: Event + 'static,
         F: FnMut(E) + 'static,
     {
+        let f = move |event: Box<dyn Any>| {
+            let event = *event.downcast::<E>().unwrap();
+            handler(event);
+        };
+
         EventHandlerWrapper {
-            handler: Box::new(move |event| {
-                let event = *event.downcast::<E>().unwrap();
-                handler(event);
-            }),
+            handler: Arc::new(Mutex::new(f)),
         }
     }
 
@@ -89,7 +100,8 @@ impl EventHandlerWrapper {
         E: Event + 'static,
     {
         let event = Box::new(event);
-        (self.handler)(event);
+        let mut handler = self.handler.lock().unwrap();
+        (handler)(event);
     }
 }
 
@@ -158,6 +170,10 @@ pub struct DefaultMediator {
     event_handlers: SharedHandler<Vec<EventHandlerWrapper>>,
 }
 
+unsafe impl Send for DefaultMediator {}
+
+unsafe impl Sync for DefaultMediator {}
+
 impl DefaultMediator {
     /// Constructs a new `DefaultMediator`.
     pub fn new() -> Self {
@@ -221,9 +237,15 @@ impl Mediator for DefaultMediator {
         Req: Request<Res> + 'static,
     {
         let type_id = TypeId::of::<Req>();
-        let mut handlers = self.request_handlers.lock().unwrap();
+        let mut handlers_lock = self
+            .request_handlers
+            .try_lock()
+            .expect("Request handlers are locked");
 
-        if let Some(handler) = handlers.get_mut(&type_id) {
+        if let Some(mut handler) = handlers_lock.get_mut(&type_id).cloned() {
+            // Drop the lock to avoid deadlocks
+            drop(handlers_lock);
+
             if let Some(res) = handler.handle(req) {
                 return Ok(res);
             }
@@ -237,10 +259,16 @@ impl Mediator for DefaultMediator {
         E: Event + 'static,
     {
         let type_id = TypeId::of::<E>();
-        let mut handlers = self.event_handlers.lock().unwrap();
+        let mut handlers_lock = self
+            .event_handlers
+            .try_lock()
+            .expect("Event handlers are locked");
 
-        if let Some(handlers) = handlers.get_mut(&type_id) {
-            for handler in handlers {
+        if let Some(handlers) = handlers_lock.get_mut(&type_id).cloned() {
+            // Drop the lock to avoid deadlocks
+            drop(handlers_lock);
+
+            for mut handler in handlers {
                 handler.handle(event.clone());
             }
         }

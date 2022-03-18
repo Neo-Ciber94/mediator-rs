@@ -56,10 +56,12 @@ fn create_mediator_service(redis: &SharedRedisService<Product>) -> SharedMediato
     use queries::*;
 
     let mut mediator = DefaultMediator::new();
+
     mediator.add_handler(get_product::GetProductRequestHandler(redis.clone()));
     mediator.add_handler(get_all_products::GetAllProductsRequestHandler(
         redis.clone(),
     ));
+
     mediator.add_handler(add_product::AddProductRequestHandler(
         redis.clone(),
         mediator.clone(),

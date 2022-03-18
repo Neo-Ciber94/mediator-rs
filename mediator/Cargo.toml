@@ -9,3 +9,4 @@ repository = "https://github.com/Neo-Ciber94/mediator-rs/"
 
 [features]
 impls = []
+default = ["impls"]
