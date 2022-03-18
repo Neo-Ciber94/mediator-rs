@@ -6,6 +6,7 @@ readme = "README.md"
 version = "0.1.0"
 edition = "2021"
 repository = "https://github.com/Neo-Ciber94/mediator-rs/"
+documentation = "https://docs.rs/mediator"
 
 [features]
 impls = []
