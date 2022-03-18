@@ -1,7 +1,8 @@
-use crate::{Error, Event, EventHandler, Mediator, Request, RequestHandler};
+use crate::{Event, EventHandler, Mediator, Request, RequestHandler};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use crate::error::{Error, ErrorKind};
 
 type SharedHandler<H> = Arc<Mutex<HashMap<TypeId, H>>>;
 
@@ -207,7 +208,7 @@ impl Mediator for DefaultMediator {
             }
         }
 
-        Err(Error::NotFound)
+        Err(Error::from(ErrorKind::NotFound))
     }
 
     fn publish<E>(&mut self, event: E) -> crate::Result<()>
@@ -227,9 +228,11 @@ impl Mediator for DefaultMediator {
             for mut handler in handlers {
                 handler.handle(event.clone());
             }
-        }
 
-        Ok(())
+            Ok(())
+        } else {
+            Err(Error::from(ErrorKind::NotFound))
+        }
     }
 }
 

@@ -69,13 +69,12 @@ pub use request::*;
 mod event;
 pub use event::*;
 
-/// Module for the errors.
-mod error;
-pub use error::*;
-
 /// Module for the mediator.
 mod mediator;
 pub use crate::mediator::*;
+
+/// Module for the errors.
+pub mod error;
 
 /// Provides default implementations.
 #[cfg(feature = "impls")]
