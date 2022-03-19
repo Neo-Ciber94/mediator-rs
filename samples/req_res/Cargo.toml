@@ -1,7 +1,0 @@
-[package]
-name = "req_res"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-mediator = { path="../../mediator" }
