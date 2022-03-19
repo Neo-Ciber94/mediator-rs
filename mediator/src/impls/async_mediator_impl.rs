@@ -53,21 +53,33 @@ impl RequestHandlerWrapper {
         }
     }
 
-    // pub fn from_fn<Req, Res, F>(mut handler: F) -> Self
-    // where
-    //     Res: 'static,
-    //     Req: Request<Res> + Send + 'static,
-    //     F: FnMut(Req) -> Res + Send + 'static,
-    // {
-    //     let f = move |req: Box<dyn Any + Send>| -> Box<dyn Any> {
-    //         let req = *req.downcast::<Req>().unwrap();
-    //         Box::new(handler(req))
-    //     };
-    //
-    //     RequestHandlerWrapper {
-    //         handler: Arc::new(Mutex::new(f)),
-    //     }
-    // }
+    pub fn from_fn<Req, Res, H, F>(handler: H) -> Self
+    where
+        Res: Send + 'static,
+        Req: Request<Res> + Send + 'static,
+        F: Future<Output = Res> + Send + 'static,
+        H: FnMut(Req) -> F + Send + 'static,
+    {
+        let handler = Arc::new(AsyncMutex::new(handler));
+
+        let f = move |req: Box<dyn Any + Send>| -> BoxFuture<'static, Box<dyn Any>> {
+            let handler = handler.clone();
+            let req = *req.downcast::<Req>().unwrap();
+
+            let res = async move {
+                let mut req_handler = handler.lock().await;
+                let res: Res = (req_handler)(req).await;
+                let box_res: Box<dyn Any> = Box::new(res);
+                box_res
+            };
+
+            Box::pin(res)
+        };
+
+        RequestHandlerWrapper {
+            handler: Arc::new(AsyncMutex::new(f)),
+        }
+    }
 
     pub async fn handle<Req, Res>(&mut self, req: Req) -> Option<BoxFuture<'_, Res>>
     where
@@ -97,15 +109,41 @@ impl AsyncDefaultMediator {
         }
     }
 
-    pub async fn add_handler<Req, Res, H>(&mut self, handler: H)
+    pub fn add_handler<Req, Res, H>(&mut self, handler: H)
     where
         Req: Request<Res> + Send + 'static,
         Res: Send + 'static,
         H: RequestHandler<Req, Res> + Sync + Send + 'static,
     {
-        let handler = RequestHandlerWrapper::new(handler);
-        let mut handlers = self.request_handlers.lock().await;
-        handlers.insert(TypeId::of::<Req>(), handler);
+        use tokio::runtime::Handle;
+
+        // We block the thread to keep the api signature consistent and don't require await
+        tokio::task::block_in_place(|| {
+            Handle::current().block_on(async move {
+                let handler = RequestHandlerWrapper::new(handler);
+                let mut handlers = self.request_handlers.lock().await;
+                handlers.insert(TypeId::of::<Req>(), handler);
+            });
+        });
+    }
+
+    pub fn add_handler_fn<Req, Res, H, F>(&mut self, handler: H)
+    where
+        Res: Send + 'static,
+        Req: Request<Res> + Send + 'static,
+        F: Future<Output = Res> + Send + 'static,
+        H: FnMut(Req) -> F + Send + 'static,
+    {
+        use tokio::runtime::Handle;
+
+        // We block the thread to keep the api signature consistent and don't require await
+        tokio::task::block_in_place(|| {
+            Handle::current().block_on(async move {
+                let handler = RequestHandlerWrapper::from_fn(handler);
+                let mut handlers = self.request_handlers.lock().await;
+                handlers.insert(TypeId::of::<Req>(), handler);
+            });
+        });
     }
 }
 
