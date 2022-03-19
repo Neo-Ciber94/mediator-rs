@@ -85,5 +85,12 @@ pub mod error;
 #[cfg(feature = "impls")]
 mod impls;
 
+/// Module for streams.
+#[cfg(feature = "streams")]
+mod stream;
+
+#[cfg(feature = "streams")]
+pub use stream::*;
+
 #[cfg(feature = "impls")]
 pub use impls::*;

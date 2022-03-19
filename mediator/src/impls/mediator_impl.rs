@@ -4,6 +4,12 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "streams")]
+use tokio_stream::Stream;
+
+#[cfg(feature = "streams")]
+use crate::{StreamRequest, StreamRequestHandler};
+
 type SharedHandler<H> = Arc<Mutex<HashMap<TypeId, H>>>;
 
 // A wrapper around the request handler to handle the request and return the result.
@@ -38,7 +44,7 @@ impl RequestHandlerWrapper {
         F: FnMut(Req) -> Res + 'static,
     {
         let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
-            let req: Req = *req.downcast::<Req>().unwrap();
+            let req = *req.downcast::<Req>().unwrap();
             Box::new(handler(req))
         };
 
@@ -108,6 +114,64 @@ impl EventHandlerWrapper {
     }
 }
 
+// A wrapper around the stream handler to handle the request.
+// To provide type safety without unsafe code we box all: the function, the params and the result.
+#[derive(Clone)]
+#[cfg(feature = "streams")]
+struct StreamRequestHandlerWrapper {
+    #[allow(clippy::type_complexity)]
+    handler: Arc<Mutex<dyn FnMut(Box<dyn Any>) -> Box<dyn Any>>>,
+}
+
+#[cfg(feature = "streams")]
+impl StreamRequestHandlerWrapper {
+    pub fn new<Req, S, T, H>(mut handler: H) -> Self
+    where
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static,
+    {
+        let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
+            let req = *req.downcast::<Req>().unwrap();
+            Box::new(handler.handle_stream(req))
+        };
+
+        StreamRequestHandlerWrapper {
+            handler: Arc::new(Mutex::new(f)),
+        }
+    }
+
+    pub fn from_fn<Req, S, T, F>(mut handler: F) -> Self
+    where
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        S: Stream<Item = T> + 'static,
+        F: FnMut(Req) -> S + 'static,
+        T: 'static,
+    {
+        let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
+            let req = *req.downcast::<Req>().unwrap();
+            Box::new(handler(req))
+        };
+
+        StreamRequestHandlerWrapper {
+            handler: Arc::new(Mutex::new(f)),
+        }
+    }
+
+    pub fn handle<Req, S, T>(&mut self, req: Req) -> Option<S>
+    where
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static,
+    {
+        let req = Box::new(req);
+        let mut handler = self.handler.lock().unwrap();
+        let res = (handler)(req);
+        res.downcast::<S>().map(|res| *res).ok()
+    }
+}
+
 /// A default implementation for the [Mediator] trait.
 ///
 /// # Examples
@@ -172,6 +236,9 @@ impl EventHandlerWrapper {
 pub struct DefaultMediator {
     request_handlers: SharedHandler<RequestHandlerWrapper>,
     event_handlers: SharedHandler<Vec<EventHandlerWrapper>>,
+
+    #[cfg(feature = "streams")]
+    stream_handlers: SharedHandler<StreamRequestHandlerWrapper>,
 }
 
 // SAFETY: the `request_handlers` and `event_handlers` are wrapped in Arc and Mutex.
@@ -234,6 +301,31 @@ impl Mediator for DefaultMediator {
             Err(Error::from(ErrorKind::NotFound))
         }
     }
+
+    #[cfg(feature = "streams")]
+    fn stream<Req, S, T>(&mut self, req: Req) -> crate::Result<S>
+    where
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static,
+    {
+        let type_id = TypeId::of::<Req>();
+        let mut handlers_lock = self
+            .stream_handlers
+            .try_lock()
+            .expect("Stream handlers are locked");
+
+        if let Some(mut handler) = handlers_lock.get_mut(&type_id).cloned() {
+            // Drop the lock to avoid deadlocks
+            drop(handlers_lock);
+
+            if let Some(stream) = handler.handle(req) {
+                return Ok(stream);
+            }
+        }
+
+        Err(Error::from(ErrorKind::NotFound))
+    }
 }
 
 /// A builder for the [DefaultMediator].
@@ -248,6 +340,9 @@ impl DefaultMediatorBuilder {
             inner: DefaultMediator {
                 request_handlers: SharedHandler::default(),
                 event_handlers: SharedHandler::default(),
+
+                #[cfg(feature = "streams")]
+                stream_handlers: SharedHandler::default(),
             },
         }
     }
@@ -354,6 +449,63 @@ impl DefaultMediatorBuilder {
         self.subscribe_fn(handler)
     }
 
+    #[cfg(feature = "streams")]
+    pub fn add_stream_handler<Req, S, T, H>(self, handler: H) -> Self
+    where
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static,
+    {
+        let mut handlers_lock = self.inner.stream_handlers.lock().unwrap();
+        handlers_lock.insert(
+            TypeId::of::<Req>(),
+            StreamRequestHandlerWrapper::new(handler),
+        );
+        drop(handlers_lock);
+        self
+    }
+
+    #[cfg(feature = "streams")]
+    pub fn add_stream_handler_fn<Req, S, T, F>(self, f: F) -> Self
+    where
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        F: FnMut(Req) -> S + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static,
+    {
+        let mut handlers_lock = self.inner.stream_handlers.lock().unwrap();
+        handlers_lock.insert(TypeId::of::<Req>(), StreamRequestHandlerWrapper::from_fn(f));
+        drop(handlers_lock);
+        self
+    }
+
+    #[cfg(feature = "streams")]
+    pub fn add_stream_handler_deferred<Req, S, T, H, F>(self, f: F) -> Self
+    where
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static,
+        F: Fn(DefaultMediator) -> H,
+    {
+        let handler = f(self.inner.clone());
+        self.add_stream_handler(handler)
+    }
+
+    #[cfg(feature = "streams")]
+    pub fn add_stream_handler_fn_deferred<Req, S, T, F, H>(self, f: F) -> Self
+    where
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        H: FnMut(Req) -> S + 'static,
+        F: Fn(DefaultMediator) -> H + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static,
+    {
+        let handler = f(self.inner.clone());
+        self.add_stream_handler_fn(handler)
+    }
+
     /// Builds a `DefaultMediator`.
     pub fn build(self) -> DefaultMediator {
         self.inner
@@ -363,5 +515,128 @@ impl DefaultMediatorBuilder {
 impl Default for DefaultMediatorBuilder {
     fn default() -> Self {
         DefaultMediatorBuilder::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{DefaultMediator, Event, EventHandler, Mediator, Request, RequestHandler};
+    use std::sync::atomic::AtomicUsize;
+
+    #[cfg(feature = "streams")]
+    use crate::{StreamRequest, StreamRequestHandler};
+
+    #[test]
+    fn send_request_test() {
+        struct TwoTimesRequest(i64);
+        impl Request<i64> for TwoTimesRequest {}
+
+        struct TwoTimesRequestHandler;
+        impl RequestHandler<TwoTimesRequest, i64> for TwoTimesRequestHandler {
+            fn handle(&mut self, request: TwoTimesRequest) -> i64 {
+                request.0 * 2
+            }
+        }
+
+        let mut mediator = DefaultMediator::builder()
+            .add_handler(TwoTimesRequestHandler)
+            .build();
+
+        assert_eq!(4, mediator.send(TwoTimesRequest(2)).unwrap());
+        assert_eq!(-6, mediator.send(TwoTimesRequest(-3)).unwrap());
+    }
+
+    #[test]
+    fn publish_event_test() {
+        #[derive(Clone)]
+        struct IncrementEvent;
+        impl Event for IncrementEvent {}
+
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+        struct TestEventHandler;
+        impl EventHandler<IncrementEvent> for TestEventHandler {
+            fn handle(&mut self, _: IncrementEvent) {
+                COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+
+        let mut mediator = DefaultMediator::builder()
+            .subscribe(TestEventHandler)
+            .build();
+
+        mediator.publish(IncrementEvent).unwrap();
+        mediator.publish(IncrementEvent).unwrap();
+        assert_eq!(2, COUNTER.load(std::sync::atomic::Ordering::SeqCst));
+
+        mediator.publish(IncrementEvent).unwrap();
+        assert_eq!(3, COUNTER.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "async")]
+    async fn async_send_test() {
+        use std::future::Future;
+        use std::pin::Pin;
+
+        type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
+
+        struct CounterRequest(i64);
+        impl Request<BoxFuture<i64>> for CounterRequest {}
+
+        struct CounterRequestHandler;
+        impl RequestHandler<CounterRequest, BoxFuture<i64>> for CounterRequestHandler {
+            fn handle(&mut self, req: CounterRequest) -> BoxFuture<i64> {
+                let result = async move { req.0 };
+                Box::pin(result)
+            }
+        }
+
+        let mut mediator = DefaultMediator::builder()
+            .add_handler(CounterRequestHandler)
+            .build();
+
+        let result = mediator.send(CounterRequest(1)).unwrap().await;
+        assert_eq!(1, result);
+
+        let result = mediator.send(CounterRequest(2)).unwrap().await;
+        assert_eq!(2, result);
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "streams")]
+    async fn create_stream_test() {
+        use std::vec::IntoIter;
+        use tokio_stream::StreamExt;
+
+        struct CounterRequest(u32);
+        impl StreamRequest for CounterRequest {
+            type Stream = tokio_stream::Iter<IntoIter<u32>>;
+            type Item = u32;
+        }
+
+        struct CounterRequestHandler;
+        impl StreamRequestHandler for CounterRequestHandler {
+            type Request = CounterRequest;
+            type Stream = tokio_stream::Iter<IntoIter<u32>>;
+            type Item = u32;
+
+            fn handle_stream(&mut self, req: CounterRequest) -> tokio_stream::Iter<IntoIter<u32>> {
+                let values = (0..req.0).collect::<Vec<_>>();
+                tokio_stream::iter(values)
+            }
+        }
+
+        let mut mediator = DefaultMediator::builder()
+            .add_stream_handler(CounterRequestHandler)
+            .build();
+
+        let mut counter_stream = mediator.stream(CounterRequest(5)).unwrap();
+        assert_eq!(0, counter_stream.next().await.unwrap());
+        assert_eq!(1, counter_stream.next().await.unwrap());
+        assert_eq!(2, counter_stream.next().await.unwrap());
+        assert_eq!(3, counter_stream.next().await.unwrap());
+        assert_eq!(4, counter_stream.next().await.unwrap());
+        assert!(counter_stream.next().await.is_none());
     }
 }
