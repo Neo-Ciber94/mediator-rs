@@ -92,5 +92,11 @@ mod stream;
 #[cfg(feature = "streams")]
 pub use stream::*;
 
+/// Re-exports of tokio-stream.
+#[cfg(feature = "streams")]
+pub mod streams {
+    pub use tokio_stream::*;
+}
+
 #[cfg(feature = "impls")]
 pub use impls::*;
