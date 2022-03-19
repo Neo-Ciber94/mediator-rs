@@ -85,6 +85,9 @@ pub mod error;
 #[cfg(feature = "impls")]
 mod impls;
 
+#[cfg(feature = "impls")]
+pub use impls::*;
+
 /// Module for streams.
 #[cfg(feature = "streams")]
 mod stream;
@@ -92,11 +95,5 @@ mod stream;
 #[cfg(feature = "streams")]
 pub use stream::*;
 
-/// Re-exports of tokio-stream.
-#[cfg(feature = "streams")]
-pub mod streams {
-    pub use tokio_stream::*;
-}
-
-#[cfg(feature = "impls")]
-pub use impls::*;
+#[cfg(feature = "async")]
+pub mod futures;

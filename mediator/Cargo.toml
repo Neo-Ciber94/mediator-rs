@@ -11,10 +11,11 @@ documentation = "https://docs.rs/mediator/"
 
 [dependencies]
 tokio-stream = { version ="0.1.8", optional = true }
-tokio = { version = "1.17.0", optional = true, features = ["rt", "macros"] }
+tokio = { version = "1.17.0", optional = true, features = ["rt", "rt-multi-thread", "macros"] }
+async-trait = { version = "0.1.52", optional = true }
 
 [features]
 impls = []
 default = ["impls"]
-async = ["tokio"]
+async = ["tokio", "async-trait"]
 streams = ["tokio", "tokio-stream"]
