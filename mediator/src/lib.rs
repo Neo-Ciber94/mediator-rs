@@ -95,5 +95,9 @@ mod stream;
 #[cfg(feature = "streams")]
 pub use stream::*;
 
+/// Re-exports for futures types.
 #[cfg(feature = "async")]
-pub mod futures;
+pub mod futures {
+    #[cfg(feature = "streams")]
+    pub use tokio_stream::*;
+}

@@ -248,7 +248,7 @@ unsafe impl Send for DefaultMediator {}
 unsafe impl Sync for DefaultMediator {}
 
 impl DefaultMediator {
-    // Gets a [DefaultMediator] builder.
+    /// Gets a [DefaultMediator] builder.
     pub fn builder() -> DefaultMediatorBuilder {
         DefaultMediatorBuilder::new()
     }

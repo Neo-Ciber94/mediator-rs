@@ -6,3 +6,11 @@ pub trait EventHandler<E: Event> {
     /// Handles an event.
     fn handle(&mut self, event: E);
 }
+
+/// An async handler for application events.
+#[cfg(feature = "async")]
+#[cfg_attr(feature = "async", async_trait::async_trait)]
+pub trait AsyncEventHandler<E: Event> {
+    /// Handles an event.
+    async fn handle(&mut self, event: E);
+}
