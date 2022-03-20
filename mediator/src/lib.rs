@@ -83,10 +83,10 @@ pub mod error;
 
 /// Module for streams.
 #[cfg(feature = "streams")]
-mod stream;
+mod streams;
 
 #[cfg(feature = "streams")]
-pub use stream::*;
+pub use streams::*;
 
 /// Re-exports for futures/stream utilities.
 #[cfg(feature = "async")]

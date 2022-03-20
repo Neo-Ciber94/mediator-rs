@@ -288,6 +288,7 @@ impl Mediator for DefaultMediator {
             .try_lock()
             .expect("Event handlers are locked");
 
+        // FIXME: Cloning the entire Vec may not be necessary, we could use something like Arc<Mutex<Vec<_>>>
         if let Some(handlers) = handlers_lock.get_mut(&type_id).cloned() {
             // Drop the lock to avoid deadlocks
             drop(handlers_lock);
