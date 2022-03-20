@@ -35,20 +35,20 @@ pub trait Mediator {
 pub trait AsyncMediator {
     /// Sends a request to the mediator.
     async fn send<Req, Res>(&mut self, req: Req) -> crate::Result<Res>
-        where
-            Res: Send + 'static,
-            Req: Request<Res> + Send + 'static;
+    where
+        Res: Send + 'static,
+        Req: Request<Res> + Send + 'static;
 
     /// Publish an event to the mediator.
     async fn publish<E>(&mut self, event: E) -> crate::Result<()>
-        where
-            E: Event + Sync + Send + 'static;
+    where
+        E: Event + Sync + Send + 'static;
 
     /// Sends a request to the mediator and returns a stream of responses.
     #[cfg(feature = "streams")]
     async fn stream<Req, S, T>(&mut self, req: Req) -> crate::Result<S>
-        where
-            Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
-            S: Stream<Item = T> + 'static,
-            T: 'static;
+    where
+        Req: StreamRequest<Stream = S, Item = T> + Sync + Send + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static;
 }

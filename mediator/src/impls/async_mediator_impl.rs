@@ -13,8 +13,8 @@ use tokio::sync::Mutex as AsyncMutex;
 #[cfg(feature = "streams")]
 use crate::{futures::Stream, StreamRequest};
 
-#[cfg(feature = "streams")]
-type BoxStream<'a, T> = Pin<Box<dyn Stream<Item = T> + Send + 'a>>;
+//#[cfg(feature = "streams")]
+//type BoxStream<'a, T> = Pin<Box<dyn Stream<Item = T> + Send + 'a>>;
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -326,13 +326,28 @@ impl AsyncMediator for DefaultAsyncMediator {
     }
 
     #[cfg(feature = "streams")]
-    async fn stream<Req, S, T>(&mut self, _req: Req) -> crate::Result<S>
+    async fn stream<Req, S, T>(&mut self, req: Req) -> crate::Result<S>
     where
-        Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
+        Req: StreamRequest<Stream = S, Item = T> + Sync + Send + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
-        todo!()
+        let type_id = TypeId::of::<Req>();
+        let mut handlers_lock = self
+            .stream_request_handlers
+            .try_lock()
+            .expect("Stream request handlers are locked");
+
+        if let Some(mut handler) = handlers_lock.get_mut(&type_id).cloned() {
+            // Drop the lock to avoid deadlocks
+            drop(handlers_lock);
+
+            if let Some(res_stream) = handler.handle(req).await {
+                return Ok(res_stream);
+            }
+        }
+
+        Err(Error::from(ErrorKind::NotFound))
     }
 }
 
@@ -342,6 +357,7 @@ pub struct DefaultAsyncMediatorBuilder {
 }
 
 impl DefaultAsyncMediatorBuilder {
+    /// Constructs a new `DefaultAsyncMediatorBuilder`.
     pub fn new() -> Self {
         Self {
             inner: DefaultAsyncMediator {
@@ -437,11 +453,11 @@ impl DefaultAsyncMediatorBuilder {
 
     #[cfg(feature = "streams")]
     pub fn add_stream_handler<Req, S, T, H>(self, handler: H) -> Self
-        where
-            Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
-            H: AsyncStreamRequestHandler<Request = Req, Stream = S, Item = T> + Send + 'static,
-            S: Stream<Item = T> + 'static,
-            T: 'static,
+    where
+        Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
+        H: AsyncStreamRequestHandler<Request = Req, Stream = S, Item = T> + Send + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static,
     {
         let mediator = self.inner.clone();
 
@@ -459,12 +475,12 @@ impl DefaultAsyncMediatorBuilder {
 
     #[cfg(feature = "streams")]
     pub fn add_stream_handler_fn<Req, S, T, H, F>(self, handler: H) -> Self
-        where
-            Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
-            F: Future<Output = S> + Send + 'static,
-            H: FnMut(Req) -> F + Send + 'static,
-            S: Stream<Item = T> + 'static,
-            T: 'static,
+    where
+        Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
+        F: Future<Output = S> + Send + 'static,
+        H: FnMut(Req) -> F + Send + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static,
     {
         let mediator = self.inner.clone();
 
@@ -490,3 +506,6 @@ impl Default for DefaultAsyncMediatorBuilder {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod test {}
