@@ -81,13 +81,6 @@ pub use crate::mediator::*;
 /// Module for the errors.
 pub mod error;
 
-/// Provides default implementations.
-#[cfg(feature = "impls")]
-mod impls;
-
-#[cfg(feature = "impls")]
-pub use impls::*;
-
 /// Module for streams.
 #[cfg(feature = "streams")]
 mod stream;
@@ -95,6 +88,31 @@ mod stream;
 #[cfg(feature = "streams")]
 pub use stream::*;
 
-/// Re-exports for futures types.
+/// Re-exports for futures/stream utilities.
 #[cfg(feature = "async")]
 pub mod futures;
+
+// Default implementations.
+#[cfg(feature = "impls")]
+mod default_impls;
+
+// Default exports
+#[cfg(feature = "impls")]
+pub use default_impls::mediator_impl::DefaultMediator;
+
+#[cfg(all(feature = "impls", feature = "async"))]
+pub use default_impls::async_mediator_impl::DefaultAsyncMediator;
+
+/// Provides default implementations.
+#[cfg(feature = "impls")]
+pub mod impls {
+    pub use crate::default_impls::mediator_impl::DefaultMediator;
+    pub use crate::default_impls::mediator_impl::Builder;
+}
+
+/// Provides async default implementations.
+#[cfg(all(feature = "impls", feature = "async"))]
+pub mod impls_async {
+    pub use crate::default_impls::async_mediator_impl::DefaultAsyncMediator;
+    pub use crate::default_impls::async_mediator_impl::Builder;
+}

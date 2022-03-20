@@ -249,8 +249,8 @@ unsafe impl Sync for DefaultMediator {}
 
 impl DefaultMediator {
     /// Gets a [DefaultMediator] builder.
-    pub fn builder() -> DefaultMediatorBuilder {
-        DefaultMediatorBuilder::new()
+    pub fn builder() -> Builder {
+        Builder::new()
     }
 }
 
@@ -329,14 +329,14 @@ impl Mediator for DefaultMediator {
 }
 
 /// A builder for the [DefaultMediator].
-pub struct DefaultMediatorBuilder {
+pub struct Builder {
     inner: DefaultMediator,
 }
 
-impl DefaultMediatorBuilder {
+impl Builder {
     /// Constructs a new `DefaultMediatorBuilder`.
     pub fn new() -> Self {
-        DefaultMediatorBuilder {
+        Builder {
             inner: DefaultMediator {
                 request_handlers: SharedHandler::default(),
                 event_handlers: SharedHandler::default(),
@@ -516,9 +516,9 @@ impl DefaultMediatorBuilder {
     }
 }
 
-impl Default for DefaultMediatorBuilder {
+impl Default for Builder {
     fn default() -> Self {
-        DefaultMediatorBuilder::new()
+        Builder::new()
     }
 }
 

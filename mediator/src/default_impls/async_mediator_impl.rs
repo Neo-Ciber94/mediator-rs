@@ -266,8 +266,8 @@ pub struct DefaultAsyncMediator {
 
 impl DefaultAsyncMediator {
     /// Gets a [DefaultAsyncMediator] builder.
-    pub fn builder() -> DefaultAsyncMediatorBuilder {
-        DefaultAsyncMediatorBuilder::new()
+    pub fn builder() -> Builder {
+        Builder::new()
     }
 }
 
@@ -352,11 +352,11 @@ impl AsyncMediator for DefaultAsyncMediator {
 }
 
 /// A builder for the [DefaultAsyncMediator].
-pub struct DefaultAsyncMediatorBuilder {
+pub struct Builder {
     inner: DefaultAsyncMediator,
 }
 
-impl DefaultAsyncMediatorBuilder {
+impl Builder {
     /// Constructs a new `DefaultAsyncMediatorBuilder`.
     pub fn new() -> Self {
         Self {
@@ -585,7 +585,7 @@ impl DefaultAsyncMediatorBuilder {
     }
 }
 
-impl Default for DefaultAsyncMediatorBuilder {
+impl Default for Builder {
     fn default() -> Self {
         Self::new()
     }
