@@ -370,6 +370,7 @@ impl DefaultAsyncMediatorBuilder {
         }
     }
 
+    /// Registers a request handler.
     pub fn add_handler<Req, Res, H>(self, handler: H) -> Self
     where
         Req: Request<Res> + Send + 'static,
@@ -390,6 +391,7 @@ impl DefaultAsyncMediatorBuilder {
         self
     }
 
+    /// Registers a request handler from a function.
     pub fn add_handler_fn<Req, Res, H, F>(self, handler: H) -> Self
     where
         Res: Send + 'static,
@@ -410,6 +412,32 @@ impl DefaultAsyncMediatorBuilder {
         self
     }
 
+    /// Register a request handler using a copy of the mediator.
+    pub fn add_handler_deferred<Req, Res, H, F>(self, f: F) -> Self
+        where
+            Req: Request<Res> + Send + 'static,
+            Res: Send + 'static,
+            H: AsyncRequestHandler<Req, Res> + Sync + Send + 'static,
+            F: Fn(DefaultAsyncMediator) -> H,
+    {
+        let handler = f(self.inner.clone());
+        self.add_handler(handler)
+    }
+
+    /// Registers a request handler from a function using a copy of the mediator.
+    pub fn add_handler_fn_deferred<Req, Res, U, H, F>(self, f: F) -> Self
+        where
+            Res: Send + 'static,
+            Req: Request<Res> + Send + 'static,
+            U: Future<Output = Res> + Send + 'static,
+            H: FnMut(Req) -> U + Send + 'static,
+            F: Fn(DefaultAsyncMediator) -> H + 'static,
+    {
+        let handler = f(self.inner.clone());
+        self.add_handler_fn(handler)
+    }
+
+    /// Registers an event handler.
     pub fn subscribe<E, H>(self, handler: H) -> Self
     where
         E: Event + Send + 'static,
@@ -430,6 +458,7 @@ impl DefaultAsyncMediatorBuilder {
         self
     }
 
+    /// Registers an event handler from a function.
     pub fn subscribe_fn<E, H, F>(self, handler: H) -> Self
     where
         E: Event + Send + 'static,
@@ -451,6 +480,30 @@ impl DefaultAsyncMediatorBuilder {
         self
     }
 
+    /// Registers an event handler using a copy of the mediator.
+    pub fn subscribe_deferred<E, H, F>(self, f: F) -> Self
+        where
+            E: Event + Send + 'static,
+            H: AsyncEventHandler<E> + Sync + Send + 'static,
+            F: Fn(DefaultAsyncMediator) -> H,
+    {
+        let handler = f(self.inner.clone());
+        self.subscribe(handler)
+    }
+
+    /// Registers an event handler from a function using a copy of the mediator.
+    pub fn subscribe_fn_deferred<E, H, U, F>(self, f: F) -> Self
+        where
+            E: Event + Send + 'static,
+            U: Future<Output = ()> + Send + 'static,
+            H: FnMut(E) -> U + Send + 'static,
+            F: Fn(DefaultAsyncMediator) -> H + 'static,
+    {
+        let handler = f(self.inner.clone());
+        self.subscribe_fn(handler)
+    }
+
+    /// Registers a stream request handler.
     #[cfg(feature = "streams")]
     pub fn add_stream_handler<Req, S, T, H>(self, handler: H) -> Self
     where
@@ -473,6 +526,7 @@ impl DefaultAsyncMediatorBuilder {
         self
     }
 
+    /// Registers a stream request handler from a function.
     #[cfg(feature = "streams")]
     pub fn add_stream_handler_fn<Req, S, T, H, F>(self, handler: H) -> Self
     where
@@ -496,6 +550,36 @@ impl DefaultAsyncMediatorBuilder {
         self
     }
 
+    /// Registers a stream handler using a copy of the mediator.
+    #[cfg(feature = "streams")]
+    pub fn add_stream_handler_deferred<Req, S, T, H, F>(self, f: F) -> Self
+        where
+            Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
+            H: AsyncStreamRequestHandler<Request = Req, Stream = S, Item = T> + Send + 'static,
+            S: Stream<Item = T> + 'static,
+            T: 'static,
+            F: Fn(DefaultAsyncMediator) -> H,
+    {
+        let handler = f(self.inner.clone());
+        self.add_stream_handler(handler)
+    }
+
+    /// Registers a stream handler from a function using a copy of the mediator.
+    #[cfg(feature = "streams")]
+    pub fn add_stream_handler_fn_deferred<Req, S, T, F, U, H>(self, f: F) -> Self
+        where
+            Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
+            U: Future<Output = S> + Send + 'static,
+            H: FnMut(Req) -> U + Send + 'static,
+            S: Stream<Item = T> + 'static,
+            T: 'static,
+            F: Fn(DefaultAsyncMediator) -> H + 'static,
+    {
+        let handler = f(self.inner.clone());
+        self.add_stream_handler_fn(handler)
+    }
+
+    /// Builds the `DefaultAsyncMediator`.
     pub fn build(self) -> DefaultAsyncMediator {
         self.inner
     }

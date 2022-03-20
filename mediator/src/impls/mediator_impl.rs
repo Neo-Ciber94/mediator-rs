@@ -449,6 +449,7 @@ impl DefaultMediatorBuilder {
         self.subscribe_fn(handler)
     }
 
+    /// Registers a stream handler.
     #[cfg(feature = "streams")]
     pub fn add_stream_handler<Req, S, T, H>(self, handler: H) -> Self
     where
@@ -466,6 +467,7 @@ impl DefaultMediatorBuilder {
         self
     }
 
+    /// Registers a stream handler from a function.
     #[cfg(feature = "streams")]
     pub fn add_stream_handler_fn<Req, S, T, F>(self, f: F) -> Self
     where
@@ -480,6 +482,7 @@ impl DefaultMediatorBuilder {
         self
     }
 
+    /// Registers a stream handler using a copy of the mediator.
     #[cfg(feature = "streams")]
     pub fn add_stream_handler_deferred<Req, S, T, H, F>(self, f: F) -> Self
     where
@@ -493,6 +496,7 @@ impl DefaultMediatorBuilder {
         self.add_stream_handler(handler)
     }
 
+    /// Registers a stream handler from a function using a copy of the mediator.
     #[cfg(feature = "streams")]
     pub fn add_stream_handler_fn_deferred<Req, S, T, F, H>(self, f: F) -> Self
     where
@@ -506,7 +510,7 @@ impl DefaultMediatorBuilder {
         self.add_stream_handler_fn(handler)
     }
 
-    /// Builds a `DefaultMediator`.
+    /// Builds the `DefaultMediator`.
     pub fn build(self) -> DefaultMediator {
         self.inner
     }
