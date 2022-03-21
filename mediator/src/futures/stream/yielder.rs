@@ -1,5 +1,5 @@
-use std::sync::mpsc::Sender;
 use crate::futures::{Stream, StreamExt};
+use std::sync::mpsc::Sender;
 
 /// Generates values for a stream.
 pub struct Yielder<T> {
@@ -14,8 +14,8 @@ impl<T> Yielder<T> {
 
     /// Sends a list of values to the stream.
     pub fn yield_all<I>(&self, iter: I)
-        where
-            I: IntoIterator<Item = T>,
+    where
+        I: IntoIterator<Item = T>,
     {
         for item in iter {
             self.sender.send(item).expect("Failed to send item");
@@ -24,8 +24,8 @@ impl<T> Yielder<T> {
 
     /// Sends a stream of values to the stream.
     pub async fn yield_stream<S>(&self, mut stream: S)
-        where
-            S: Stream<Item = T> + Unpin,
+    where
+        S: Stream<Item = T> + Unpin,
     {
         while let Some(item) = stream.next().await {
             self.sender.send(item).expect("Failed to send item");

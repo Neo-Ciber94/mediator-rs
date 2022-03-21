@@ -106,13 +106,13 @@ where
         }
 
         let future = {
-           match future {
-               Some(f) => f,
-               None => {
-                   let builder = builder.take().unwrap();
-                   future.get_or_insert(builder(yielder.clone()))
-               }
-           }
+            match future {
+                Some(f) => f,
+                None => {
+                    let builder = builder.take().unwrap();
+                    future.get_or_insert(builder(yielder.clone()))
+                }
+            }
         };
 
         let poll = Pin::new(future).poll(cx);

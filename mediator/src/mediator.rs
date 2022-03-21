@@ -47,8 +47,8 @@ pub trait AsyncMediator {
     /// Sends a request to the mediator and returns a stream of responses.
     #[cfg(feature = "streams")]
     fn stream<Req, S, T>(&mut self, req: Req) -> crate::Result<S>
-        where
-            Req: StreamRequest<Stream = S, Item = T> + 'static,
-            S: Stream<Item = T> + 'static,
-            T: 'static;
+    where
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static;
 }

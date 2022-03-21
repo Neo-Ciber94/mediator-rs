@@ -2,25 +2,6 @@ use mediator::futures::BoxStream;
 use mediator::futures::StreamExt;
 use mediator::{box_stream, DefaultMediator, Event, Mediator, StreamRequest};
 
-/*
-trait Request {}
-trait Event {}
-trait StreamRequest {}
-
-trait HandleRequest {}
-trait HandleEvent {}
-trait HandleStreamRequest {}
-trait Mediate {}
-
-trait AsyncHandleRequest {}
-trait AsyncHandleEvent {}
-trait AsyncHandleStreamRequest {}
-trait AsyncMediate {}
-
-struct Mediator {}
-struct AsyncMediator {}
-*/
-
 struct TimerRequest(u64);
 impl StreamRequest for TimerRequest {
     type Stream = BoxStream<'static, ()>;

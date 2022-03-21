@@ -106,13 +106,13 @@ pub use default_impls::async_mediator_impl::DefaultAsyncMediator;
 /// Provides default implementations.
 #[cfg(feature = "impls")]
 pub mod impls {
-    pub use crate::default_impls::mediator_impl::DefaultMediator;
     pub use crate::default_impls::mediator_impl::Builder;
+    pub use crate::default_impls::mediator_impl::DefaultMediator;
 }
 
 /// Provides async default implementations.
 #[cfg(all(feature = "impls", feature = "async"))]
 pub mod impls_async {
-    pub use crate::default_impls::async_mediator_impl::DefaultAsyncMediator;
     pub use crate::default_impls::async_mediator_impl::Builder;
+    pub use crate::default_impls::async_mediator_impl::DefaultAsyncMediator;
 }

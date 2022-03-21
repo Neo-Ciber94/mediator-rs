@@ -1,4 +1,3 @@
-
 /// Constructs a `impl Stream<Item=T>` from a generator.
 ///
 /// # Examples
@@ -84,4 +83,3 @@ macro_rules! box_stream {
        $crate::box_stream!(|$yielder| move { $($tt)* })
     }};
 }
-

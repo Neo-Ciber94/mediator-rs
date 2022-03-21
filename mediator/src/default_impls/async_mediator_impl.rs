@@ -1,7 +1,6 @@
 use crate::error::{Error, ErrorKind};
 use crate::{
-    AsyncEventHandler, AsyncMediator, AsyncRequestHandler, Event,
-    Request, StreamRequestHandler,
+    AsyncEventHandler, AsyncMediator, AsyncRequestHandler, Event, Request, StreamRequestHandler,
 };
 use std::any::{Any, TypeId};
 use std::collections::HashMap;

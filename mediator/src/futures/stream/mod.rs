@@ -1,5 +1,3 @@
-
-
 mod generator_macros;
 pub use generator_macros::*;
 
