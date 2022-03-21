@@ -1,24 +1,23 @@
 use crate::error::{Error, ErrorKind};
 use crate::{
-    AsyncEventHandler, AsyncMediator, AsyncRequestHandler, AsyncStreamRequestHandler, Event,
-    Request,
+    AsyncEventHandler, AsyncMediator, AsyncRequestHandler, Event,
+    Request, StreamRequestHandler,
 };
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as AsyncMutex;
 
 #[cfg(feature = "streams")]
 use crate::{futures::Stream, StreamRequest};
 
-//#[cfg(feature = "streams")]
-//type BoxStream<'a, T> = Pin<Box<dyn Stream<Item = T> + Send + 'a>>;
-
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-type SharedHandler<H> = Arc<AsyncMutex<HashMap<TypeId, H>>>;
+type SharedAsyncHandler<H> = Arc<AsyncMutex<HashMap<TypeId, H>>>;
+
+type SharedHandler<H> = Arc<Mutex<HashMap<TypeId, H>>>;
 
 // A wrapper around the request handler to handle the request and return the result.
 // To provide type safety without unsafe code we box all: the function, the params and the result.
@@ -244,125 +243,89 @@ impl EventHandlerWrapper {
     }
 }
 
-// A wrapper around the request handler to handle the request and return the result.
+// A wrapper around the stream handler to handle the request.
 // To provide type safety without unsafe code we box all: the function, the params and the result.
 #[derive(Clone)]
 #[cfg(feature = "streams")]
 struct StreamRequestHandlerWrapper {
     #[allow(clippy::type_complexity)]
-    handler: Arc<
-        AsyncMutex<(dyn FnMut(Box<dyn Any + Send>) -> BoxFuture<'static, Box<dyn Any>> + Send)>,
-    >,
+    handler: Arc<Mutex<dyn FnMut(Box<dyn Any>) -> Box<dyn Any>>>,
     is_deferred: bool,
 }
 
 #[cfg(feature = "streams")]
 impl StreamRequestHandlerWrapper {
-    pub fn new<Req, S, T, H>(handler: H) -> Self
+    pub fn new<Req, S, T, H>(mut handler: H) -> Self
     where
-        Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
-        H: AsyncStreamRequestHandler<Request = Req, Stream = S, Item = T> + Send + 'static,
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
-        let handler = Arc::new(AsyncMutex::new(handler));
-
-        let f = move |req: Box<dyn Any + Send>| -> BoxFuture<'static, Box<dyn Any>> {
-            let handler = handler.clone();
+        let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
             let req = *req.downcast::<Req>().unwrap();
-
-            let res = async move {
-                let mut req_handler = handler.lock().await;
-                let res = req_handler.handle_stream(req).await;
-                let box_res: Box<dyn Any> = Box::new(res);
-                box_res
-            };
-
-            Box::pin(res)
+            Box::new(handler.handle_stream(req))
         };
 
         StreamRequestHandlerWrapper {
-            handler: Arc::new(AsyncMutex::new(f)),
+            handler: Arc::new(Mutex::new(f)),
             is_deferred: false,
         }
     }
 
-    pub fn from_fn<Req, S, T, H, F>(handler: H) -> Self
+    pub fn from_fn<Req, S, T, F>(mut handler: F) -> Self
     where
-        Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
-        H: FnMut(Req) -> F + Send + 'static,
-        F: Future<Output = S> + Send + 'static,
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
+        F: FnMut(Req) -> S + 'static,
         T: 'static,
     {
-        let handler = Arc::new(AsyncMutex::new(handler));
-
-        let f = move |req: Box<dyn Any + Send>| -> BoxFuture<'static, Box<dyn Any>> {
-            let handler = handler.clone();
+        let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
             let req = *req.downcast::<Req>().unwrap();
-
-            let res = async move {
-                let mut req_handler = handler.lock().await;
-                let res = (req_handler)(req).await;
-                let box_res: Box<dyn Any> = Box::new(res);
-                box_res
-            };
-
-            Box::pin(res)
+            Box::new(handler(req))
         };
 
         StreamRequestHandlerWrapper {
-            handler: Arc::new(AsyncMutex::new(f)),
+            handler: Arc::new(Mutex::new(f)),
             is_deferred: false,
         }
     }
 
-    pub fn from_deferred<Req, S, T, H, F>(handler: H) -> Self
+    pub fn from_deferred<Req, S, T, F>(mut handler: F) -> Self
     where
-        Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
-        H: FnMut(Req, DefaultAsyncMediator) -> F + Send + 'static,
-        F: Future<Output = S> + Send + 'static,
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
+        F: FnMut(Req, DefaultAsyncMediator) -> S + 'static,
         T: 'static,
     {
-        let handler = Arc::new(AsyncMutex::new(handler));
-
-        let f = move |req: Box<dyn Any + Send>| -> BoxFuture<'static, Box<dyn Any>> {
-            let handler = handler.clone();
+        let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
             let (req, mediator) = *req.downcast::<(Req, DefaultAsyncMediator)>().unwrap();
-
-            let res = async move {
-                let mut req_handler = handler.lock().await;
-                let res = (req_handler)(req, mediator).await;
-                let box_res: Box<dyn Any> = Box::new(res);
-                box_res
-            };
-
-            Box::pin(res)
+            Box::new(handler(req, mediator))
         };
 
         StreamRequestHandlerWrapper {
-            handler: Arc::new(AsyncMutex::new(f)),
+            handler: Arc::new(Mutex::new(f)),
             is_deferred: true,
         }
     }
 
-    pub async fn handle<Req, S, T>(
+    pub fn handle<Req, S, T>(
         &mut self,
         req: Req,
         mediator: Option<DefaultAsyncMediator>,
     ) -> Option<S>
     where
-        Req: StreamRequest<Stream = S, Item = T> + Sync + Send + 'static,
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
-        let mut lock = self.handler.lock().await;
-        let req: Box<dyn Any + Send> = match mediator {
+        let mut handler = self.handler.lock().unwrap();
+        let req: Box<dyn Any> = match mediator {
             Some(mediator) => Box::new((req, mediator)),
             None => Box::new(req),
         };
-        let res = (lock)(req).await;
+
+        let res = (handler)(req);
         res.downcast::<S>().map(|res| *res).ok()
     }
 }
@@ -370,11 +333,11 @@ impl StreamRequestHandlerWrapper {
 /// A default implementation for the [AsyncMediator] trait.
 #[derive(Clone)]
 pub struct DefaultAsyncMediator {
-    request_handlers: SharedHandler<RequestHandlerWrapper>,
-    event_handlers: SharedHandler<Vec<EventHandlerWrapper>>,
+    request_handlers: SharedAsyncHandler<RequestHandlerWrapper>,
+    event_handlers: SharedAsyncHandler<Vec<EventHandlerWrapper>>,
 
     #[cfg(feature = "streams")]
-    stream_request_handlers: SharedHandler<StreamRequestHandlerWrapper>,
+    stream_handlers: SharedHandler<StreamRequestHandlerWrapper>,
 }
 
 impl DefaultAsyncMediator {
@@ -452,17 +415,17 @@ impl AsyncMediator for DefaultAsyncMediator {
     }
 
     #[cfg(feature = "streams")]
-    async fn stream<Req, S, T>(&mut self, req: Req) -> crate::Result<S>
+    fn stream<Req, S, T>(&mut self, req: Req) -> crate::Result<S>
     where
-        Req: StreamRequest<Stream = S, Item = T> + Sync + Send + 'static,
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
         let type_id = TypeId::of::<Req>();
         let mut handlers_lock = self
-            .stream_request_handlers
+            .stream_handlers
             .try_lock()
-            .expect("Stream request handlers are locked");
+            .expect("Stream handlers are locked");
 
         if let Some(mut handler) = handlers_lock.get_mut(&type_id).cloned() {
             // Drop the lock to avoid deadlocks
@@ -474,8 +437,8 @@ impl AsyncMediator for DefaultAsyncMediator {
                 None
             };
 
-            if let Some(res_stream) = handler.handle(req, mediator).await {
-                return Ok(res_stream);
+            if let Some(stream) = handler.handle(req, mediator) {
+                return Ok(stream);
             }
         }
 
@@ -493,11 +456,11 @@ impl Builder {
     pub fn new() -> Self {
         Self {
             inner: DefaultAsyncMediator {
-                request_handlers: SharedHandler::default(),
-                event_handlers: SharedHandler::default(),
+                request_handlers: SharedAsyncHandler::default(),
+                event_handlers: SharedAsyncHandler::default(),
 
                 #[cfg(feature = "streams")]
-                stream_request_handlers: SharedHandler::default(),
+                stream_handlers: SharedHandler::default(),
             },
         }
     }
@@ -653,50 +616,36 @@ impl Builder {
         self
     }
 
-    /// Registers a stream request handler.
+    /// Registers a stream handler.
     #[cfg(feature = "streams")]
     pub fn add_stream_handler<Req, S, T, H>(self, handler: H) -> Self
     where
-        Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
-        H: AsyncStreamRequestHandler<Request = Req, Stream = S, Item = T> + Send + 'static,
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
-        let mediator = self.inner.clone();
-
-        // We block the thread to keep the api signature consistent and don't require await
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                let handler = StreamRequestHandlerWrapper::new(handler);
-                let mut handlers = mediator.stream_request_handlers.lock().await;
-                handlers.insert(TypeId::of::<Req>(), handler);
-            });
-        });
-
+        let mut handlers_lock = self.inner.stream_handlers.lock().unwrap();
+        handlers_lock.insert(
+            TypeId::of::<Req>(),
+            StreamRequestHandlerWrapper::new(handler),
+        );
+        drop(handlers_lock);
         self
     }
 
-    /// Registers a stream request handler from a function.
+    /// Registers a stream handler from a function.
     #[cfg(feature = "streams")]
-    pub fn add_stream_handler_fn<Req, S, T, H, F>(self, handler: H) -> Self
+    pub fn add_stream_handler_fn<Req, S, T, F>(self, f: F) -> Self
     where
-        Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
-        F: Future<Output = S> + Send + 'static,
-        H: FnMut(Req) -> F + Send + 'static,
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        F: FnMut(Req) -> S + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
-        let mediator = self.inner.clone();
-
-        // We block the thread to keep the api signature consistent and don't require await
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                let handler = StreamRequestHandlerWrapper::from_fn(handler);
-                let mut handlers = mediator.stream_request_handlers.lock().await;
-                handlers.insert(TypeId::of::<Req>(), handler);
-            });
-        });
-
+        let mut handlers_lock = self.inner.stream_handlers.lock().unwrap();
+        handlers_lock.insert(TypeId::of::<Req>(), StreamRequestHandlerWrapper::from_fn(f));
+        drop(handlers_lock);
         self
     }
 
@@ -704,8 +653,8 @@ impl Builder {
     #[cfg(feature = "streams")]
     pub fn add_stream_handler_deferred<Req, S, T, H, F>(self, f: F) -> Self
     where
-        Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
-        H: AsyncStreamRequestHandler<Request = Req, Stream = S, Item = T> + Send + 'static,
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
         F: Fn(DefaultAsyncMediator) -> H,
@@ -716,25 +665,19 @@ impl Builder {
 
     /// Registers a stream handler from a function using a copy of the mediator.
     #[cfg(feature = "streams")]
-    pub fn add_stream_handler_fn_deferred<Req, S, T, F, U, H>(self, f: H) -> Self
-        where
-            Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
-            F: Future<Output = S> + Send + 'static,
-            H: FnMut(Req, DefaultAsyncMediator) -> F + Send + 'static,
-            S: Stream<Item = T> + 'static,
-            T: 'static,
+    pub fn add_stream_handler_fn_deferred<Req, S, T, F>(self, f: F) -> Self
+    where
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        F: FnMut(Req, DefaultAsyncMediator) -> S + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static,
     {
-        let mediator = self.inner.clone();
-
-        // We block the thread to keep the api signature consistent and don't require await
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                let handler = StreamRequestHandlerWrapper::from_deferred(f);
-                let mut handlers = mediator.stream_request_handlers.lock().await;
-                handlers.insert(TypeId::of::<Req>(), handler);
-            });
-        });
-
+        let mut handlers_lock = self.inner.stream_handlers.lock().unwrap();
+        handlers_lock.insert(
+            TypeId::of::<Req>(),
+            StreamRequestHandlerWrapper::from_deferred(f),
+        );
+        drop(handlers_lock);
         self
     }
 
