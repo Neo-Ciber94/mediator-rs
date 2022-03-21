@@ -3,8 +3,8 @@
 mod generator_macros;
 pub use generator_macros::*;
 
-mod generator;
-pub use generator::*;
+mod generate_stream;
+pub use generate_stream::*;
 
 mod yielder;
 pub use yielder::*;

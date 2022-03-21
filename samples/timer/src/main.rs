@@ -1,5 +1,8 @@
-use mediator::streams::Stream;
-use mediator::{streams, streams::StreamExt, DefaultMediator, Event, StreamRequest, StreamRequestHandler, Mediator};
+use mediator::futures::Stream;
+use mediator::{
+    futures, futures::StreamExt, DefaultMediator, Event, Mediator, StreamRequest,
+    StreamRequestHandler,
+};
 use std::pin::Pin;
 use std::time::Duration;
 
@@ -18,8 +21,7 @@ impl StreamRequestHandler for TimerRequestHandler {
     type Item = u64;
 
     fn handle_stream(&mut self, req: Self::Request) -> Self::Stream {
-        let stream = streams::iter(0..req.0)
-            .throttle(Duration::from_secs(1));
+        let stream = futures::iter(0..req.0).throttle(Duration::from_secs(1));
 
         Box::pin(stream)
     }

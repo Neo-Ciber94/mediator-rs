@@ -28,6 +28,7 @@ struct RequestHandlerWrapper {
     handler: Arc<
         AsyncMutex<(dyn FnMut(Box<dyn Any + Send>) -> BoxFuture<'static, Box<dyn Any>> + Send)>,
     >,
+    is_deferred: bool,
 }
 
 impl RequestHandlerWrapper {
@@ -55,6 +56,7 @@ impl RequestHandlerWrapper {
 
         RequestHandlerWrapper {
             handler: Arc::new(AsyncMutex::new(f)),
+            is_deferred: false,
         }
     }
 
@@ -83,16 +85,54 @@ impl RequestHandlerWrapper {
 
         RequestHandlerWrapper {
             handler: Arc::new(AsyncMutex::new(f)),
+            is_deferred: false,
         }
     }
 
-    pub async fn handle<Req, Res>(&mut self, req: Req) -> Option<BoxFuture<'_, Res>>
+    pub fn from_deferred<Req, Res, H, F>(handler: H) -> Self
+    where
+        Res: Send + 'static,
+        Req: Request<Res> + Send + 'static,
+        F: Future<Output = Res> + Send + 'static,
+        H: FnMut(Req, DefaultAsyncMediator) -> F + Send + 'static,
+    {
+        let handler = Arc::new(AsyncMutex::new(handler));
+
+        let f = move |req: Box<dyn Any + Send>| -> BoxFuture<'static, Box<dyn Any>> {
+            let handler = handler.clone();
+            let (req, mediator) = *req.downcast::<(Req, DefaultAsyncMediator)>().unwrap();
+
+            let res = async move {
+                let mut req_handler = handler.lock().await;
+                let res = (req_handler)(req, mediator).await;
+                let box_res: Box<dyn Any> = Box::new(res);
+                box_res
+            };
+
+            Box::pin(res)
+        };
+
+        RequestHandlerWrapper {
+            handler: Arc::new(AsyncMutex::new(f)),
+            is_deferred: true,
+        }
+    }
+
+    pub async fn handle<Req, Res>(
+        &mut self,
+        req: Req,
+        mediator: Option<DefaultAsyncMediator>,
+    ) -> Option<BoxFuture<'_, Res>>
     where
         Res: Send + 'static,
         Req: Request<Res> + Send + 'static,
     {
-        let req = Box::new(req);
         let mut lock = self.handler.lock().await;
+        let req: Box<dyn Any + Send> = match mediator {
+            Some(mediator) => Box::new((req, mediator)),
+            None => Box::new(req),
+        };
+
         let res_future: BoxFuture<Box<dyn Any>> = (lock)(req);
         let res_box = res_future.await;
 
@@ -109,6 +149,7 @@ impl RequestHandlerWrapper {
 struct EventHandlerWrapper {
     #[allow(clippy::type_complexity)]
     handler: Arc<AsyncMutex<dyn FnMut(Box<dyn Any + Send>) -> BoxFuture<'static, ()> + Send>>,
+    is_deferred: bool,
 }
 
 impl EventHandlerWrapper {
@@ -133,6 +174,7 @@ impl EventHandlerWrapper {
 
         EventHandlerWrapper {
             handler: Arc::new(AsyncMutex::new(f)),
+            is_deferred: false,
         }
     }
 
@@ -158,15 +200,46 @@ impl EventHandlerWrapper {
 
         EventHandlerWrapper {
             handler: Arc::new(AsyncMutex::new(f)),
+            is_deferred: false,
         }
     }
 
-    pub async fn handle<E>(&mut self, event: E)
+    pub fn from_deferred<E, H, F>(handler: H) -> Self
+    where
+        E: Event + Send + 'static,
+        H: FnMut(E, DefaultAsyncMediator) -> F + Send + 'static,
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let handler = Arc::new(AsyncMutex::new(handler));
+
+        let f = move |event: Box<dyn Any + Send>| -> BoxFuture<'static, ()> {
+            let handler = handler.clone();
+            let (event, mediator) = *event.downcast::<(E, DefaultAsyncMediator)>().unwrap();
+
+            let res = async move {
+                let mut req_handler = handler.lock().await;
+                (req_handler)(event, mediator).await;
+            };
+
+            Box::pin(res)
+        };
+
+        EventHandlerWrapper {
+            handler: Arc::new(AsyncMutex::new(f)),
+            is_deferred: true,
+        }
+    }
+
+    pub async fn handle<E>(&mut self, event: E, mediator: Option<DefaultAsyncMediator>)
     where
         E: Event + Sync + Send + 'static,
     {
-        let event = Box::new(event);
         let mut lock = self.handler.lock().await;
+        let event: Box<dyn Any + Send> = match mediator {
+            Some(mediator) => Box::new((event, mediator)),
+            None => Box::new(event),
+        };
+
         (lock)(event).await;
     }
 }
@@ -180,6 +253,7 @@ struct StreamRequestHandlerWrapper {
     handler: Arc<
         AsyncMutex<(dyn FnMut(Box<dyn Any + Send>) -> BoxFuture<'static, Box<dyn Any>> + Send)>,
     >,
+    is_deferred: bool,
 }
 
 #[cfg(feature = "streams")]
@@ -209,6 +283,7 @@ impl StreamRequestHandlerWrapper {
 
         StreamRequestHandlerWrapper {
             handler: Arc::new(AsyncMutex::new(f)),
+            is_deferred: false,
         }
     }
 
@@ -238,17 +313,55 @@ impl StreamRequestHandlerWrapper {
 
         StreamRequestHandlerWrapper {
             handler: Arc::new(AsyncMutex::new(f)),
+            is_deferred: false,
         }
     }
 
-    pub async fn handle<Req, S, T>(&mut self, req: Req) -> Option<S>
+    pub fn from_deferred<Req, S, T, H, F>(handler: H) -> Self
+    where
+        Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
+        H: FnMut(Req, DefaultAsyncMediator) -> F + Send + 'static,
+        F: Future<Output = S> + Send + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static,
+    {
+        let handler = Arc::new(AsyncMutex::new(handler));
+
+        let f = move |req: Box<dyn Any + Send>| -> BoxFuture<'static, Box<dyn Any>> {
+            let handler = handler.clone();
+            let (req, mediator) = *req.downcast::<(Req, DefaultAsyncMediator)>().unwrap();
+
+            let res = async move {
+                let mut req_handler = handler.lock().await;
+                let res = (req_handler)(req, mediator).await;
+                let box_res: Box<dyn Any> = Box::new(res);
+                box_res
+            };
+
+            Box::pin(res)
+        };
+
+        StreamRequestHandlerWrapper {
+            handler: Arc::new(AsyncMutex::new(f)),
+            is_deferred: true,
+        }
+    }
+
+    pub async fn handle<Req, S, T>(
+        &mut self,
+        req: Req,
+        mediator: Option<DefaultAsyncMediator>,
+    ) -> Option<S>
     where
         Req: StreamRequest<Stream = S, Item = T> + Sync + Send + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
-        let req = Box::new(req);
         let mut lock = self.handler.lock().await;
+        let req: Box<dyn Any + Send> = match mediator {
+            Some(mediator) => Box::new((req, mediator)),
+            None => Box::new(req),
+        };
         let res = (lock)(req).await;
         res.downcast::<S>().map(|res| *res).ok()
     }
@@ -294,7 +407,13 @@ impl AsyncMediator for DefaultAsyncMediator {
             // Drop the lock to avoid deadlocks
             drop(handlers_lock);
 
-            if let Some(res_future) = handler.handle(req).await {
+            let mediator = if handler.is_deferred {
+                Some(self.clone())
+            } else {
+                None
+            };
+
+            if let Some(res_future) = handler.handle(req, mediator).await {
                 let res = res_future.await;
                 return Ok(res);
             }
@@ -319,7 +438,13 @@ impl AsyncMediator for DefaultAsyncMediator {
             drop(handlers_lock);
 
             for mut handler in handlers {
-                handler.handle(event.clone()).await;
+                let mediator = if handler.is_deferred {
+                    Some(self.clone())
+                } else {
+                    None
+                };
+
+                handler.handle(event.clone(), mediator).await;
             }
         }
 
@@ -343,7 +468,13 @@ impl AsyncMediator for DefaultAsyncMediator {
             // Drop the lock to avoid deadlocks
             drop(handlers_lock);
 
-            if let Some(res_stream) = handler.handle(req).await {
+            let mediator = if handler.is_deferred {
+                Some(self.clone())
+            } else {
+                None
+            };
+
+            if let Some(res_stream) = handler.handle(req, mediator).await {
                 return Ok(res_stream);
             }
         }
@@ -415,27 +546,35 @@ impl Builder {
 
     /// Register a request handler using a copy of the mediator.
     pub fn add_handler_deferred<Req, Res, H, F>(self, f: F) -> Self
-        where
-            Req: Request<Res> + Send + 'static,
-            Res: Send + 'static,
-            H: AsyncRequestHandler<Req, Res> + Sync + Send + 'static,
-            F: Fn(DefaultAsyncMediator) -> H,
+    where
+        Req: Request<Res> + Send + 'static,
+        Res: Send + 'static,
+        H: AsyncRequestHandler<Req, Res> + Sync + Send + 'static,
+        F: Fn(DefaultAsyncMediator) -> H,
     {
         let handler = f(self.inner.clone());
         self.add_handler(handler)
     }
 
     /// Registers a request handler from a function using a copy of the mediator.
-    pub fn add_handler_fn_deferred<Req, Res, U, H, F>(self, f: F) -> Self
-        where
-            Res: Send + 'static,
-            Req: Request<Res> + Send + 'static,
-            U: Future<Output = Res> + Send + 'static,
-            H: FnMut(Req) -> U + Send + 'static,
-            F: Fn(DefaultAsyncMediator) -> H + 'static,
+    pub fn add_handler_fn_deferred<Req, Res, U, H, F>(self, f: H) -> Self
+    where
+        Res: Send + 'static,
+        Req: Request<Res> + Send + 'static,
+        F: Future<Output = Res> + Send + 'static,
+        H: FnMut(Req, DefaultAsyncMediator) -> F + Send + 'static,
     {
-        let handler = f(self.inner.clone());
-        self.add_handler_fn(handler)
+        let mediator = self.inner.clone();
+
+        // We block the thread to keep the api signature consistent and don't require await
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                let handler = RequestHandlerWrapper::from_deferred(f);
+                let mut handlers = mediator.request_handlers.lock().await;
+                handlers.insert(TypeId::of::<Req>(), handler);
+            });
+        });
+        self
     }
 
     /// Registers an event handler.
@@ -483,25 +622,35 @@ impl Builder {
 
     /// Registers an event handler using a copy of the mediator.
     pub fn subscribe_deferred<E, H, F>(self, f: F) -> Self
-        where
-            E: Event + Send + 'static,
-            H: AsyncEventHandler<E> + Sync + Send + 'static,
-            F: Fn(DefaultAsyncMediator) -> H,
+    where
+        E: Event + Send + 'static,
+        H: AsyncEventHandler<E> + Sync + Send + 'static,
+        F: Fn(DefaultAsyncMediator) -> H,
     {
         let handler = f(self.inner.clone());
         self.subscribe(handler)
     }
 
     /// Registers an event handler from a function using a copy of the mediator.
-    pub fn subscribe_fn_deferred<E, H, U, F>(self, f: F) -> Self
-        where
-            E: Event + Send + 'static,
-            U: Future<Output = ()> + Send + 'static,
-            H: FnMut(E) -> U + Send + 'static,
-            F: Fn(DefaultAsyncMediator) -> H + 'static,
+    pub fn subscribe_fn_deferred<E, H, U, F>(self, f: H) -> Self
+    where
+        E: Event + Send + 'static,
+        F: Future<Output = ()> + Send + 'static,
+        H: FnMut(E, DefaultAsyncMediator) -> F + Send + 'static,
     {
-        let handler = f(self.inner.clone());
-        self.subscribe_fn(handler)
+        let mediator = self.inner.clone();
+
+        // We block the thread to keep the api signature consistent and don't require await
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                let handler = EventHandlerWrapper::from_deferred(f);
+                let mut handlers = mediator.event_handlers.lock().await;
+                let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
+                event_handlers.push(handler);
+            });
+        });
+
+        self
     }
 
     /// Registers a stream request handler.
@@ -554,12 +703,12 @@ impl Builder {
     /// Registers a stream handler using a copy of the mediator.
     #[cfg(feature = "streams")]
     pub fn add_stream_handler_deferred<Req, S, T, H, F>(self, f: F) -> Self
-        where
-            Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
-            H: AsyncStreamRequestHandler<Request = Req, Stream = S, Item = T> + Send + 'static,
-            S: Stream<Item = T> + 'static,
-            T: 'static,
-            F: Fn(DefaultAsyncMediator) -> H,
+    where
+        Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
+        H: AsyncStreamRequestHandler<Request = Req, Stream = S, Item = T> + Send + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static,
+        F: Fn(DefaultAsyncMediator) -> H,
     {
         let handler = f(self.inner.clone());
         self.add_stream_handler(handler)
@@ -567,17 +716,26 @@ impl Builder {
 
     /// Registers a stream handler from a function using a copy of the mediator.
     #[cfg(feature = "streams")]
-    pub fn add_stream_handler_fn_deferred<Req, S, T, F, U, H>(self, f: F) -> Self
+    pub fn add_stream_handler_fn_deferred<Req, S, T, F, U, H>(self, f: H) -> Self
         where
             Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
-            U: Future<Output = S> + Send + 'static,
-            H: FnMut(Req) -> U + Send + 'static,
+            F: Future<Output = S> + Send + 'static,
+            H: FnMut(Req, DefaultAsyncMediator) -> F + Send + 'static,
             S: Stream<Item = T> + 'static,
             T: 'static,
-            F: Fn(DefaultAsyncMediator) -> H + 'static,
     {
-        let handler = f(self.inner.clone());
-        self.add_stream_handler_fn(handler)
+        let mediator = self.inner.clone();
+
+        // We block the thread to keep the api signature consistent and don't require await
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                let handler = StreamRequestHandlerWrapper::from_deferred(f);
+                let mut handlers = mediator.stream_request_handlers.lock().await;
+                handlers.insert(TypeId::of::<Req>(), handler);
+            });
+        });
+
+        self
     }
 
     /// Builds the `DefaultAsyncMediator`.

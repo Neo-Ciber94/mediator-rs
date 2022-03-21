@@ -3,13 +3,13 @@ use crate::futures::{Stream, StreamExt};
 
 /// Generates values for a stream.
 pub struct Yielder<T> {
-    pub(crate) tx: Sender<T>,
+    pub(crate) sender: Sender<T>,
 }
 
 impl<T> Yielder<T> {
     /// Sends a value to the stream.
     pub fn yield_one(&self, item: T) {
-        self.tx.send(item).expect("Failed to send item");
+        self.sender.send(item).expect("Failed to send item");
     }
 
     /// Sends a list of values to the stream.
@@ -18,7 +18,7 @@ impl<T> Yielder<T> {
             I: IntoIterator<Item = T>,
     {
         for item in iter {
-            self.tx.send(item).expect("Failed to send item");
+            self.sender.send(item).expect("Failed to send item");
         }
     }
 
@@ -28,7 +28,7 @@ impl<T> Yielder<T> {
             S: Stream<Item = T> + Unpin,
     {
         while let Some(item) = stream.next().await {
-            self.tx.send(item).expect("Failed to send item");
+            self.sender.send(item).expect("Failed to send item");
         }
     }
 }
@@ -36,7 +36,7 @@ impl<T> Yielder<T> {
 impl<T> Clone for Yielder<T> {
     fn clone(&self) -> Self {
         Self {
-            tx: self.tx.clone(),
+            sender: self.sender.clone(),
         }
     }
 }

@@ -10,7 +10,7 @@ use crate::services::redis_service::{RedisService, SharedRedisService};
 use actix_web::middleware::TrailingSlash;
 use actix_web::web::Data;
 use actix_web::{middleware, web, App, HttpServer};
-use mediator::{DefaultMediator, DefaultMediatorBuilder};
+use mediator::{DefaultMediator, Builder};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
@@ -56,7 +56,7 @@ fn create_mediator_service(redis: &SharedRedisService<Product>) -> SharedMediato
     use queries::*;
 
     let redis = redis.clone();
-    let mediator = DefaultMediatorBuilder::new()
+    let mediator = Builder::new()
         // Requests
         .add_handler(GetProductRequestHandler(redis.clone()))
         .add_handler(GetAllProductsRequestHandler(redis.clone()))

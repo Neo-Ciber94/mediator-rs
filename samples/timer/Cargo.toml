@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-mediator = { path = "../../mediator", features = ["streams"] }
+mediator = { path = "../../mediator", features = ["streams", "async"] }
 tokio = { version = "1", features = ["full"] }

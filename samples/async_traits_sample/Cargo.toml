@@ -3,6 +3,9 @@ name = "async_traits_sample"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+mediator = { path = "../../mediator", features=["async", "streams"]}
+async-trait =  "0.1.52"
+tokio = { version = "1", features = ["full"]}
+async-stream = "0.3.3"
+lazy_static = "1.4.0"

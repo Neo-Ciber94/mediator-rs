@@ -22,15 +22,23 @@
 #[macro_export]
 macro_rules! stream {
     (|$yielder:ident| { $($tt:tt)*}) => {{
-        $crate::futures::stream::generate(|$yielder| Box::pin(async move {
+        $crate::futures::stream::generate_stream(|$yielder| Box::pin(async move {
             $($tt)*
         }))
     }};
 
     (|$yielder:ident| move { $($tt:tt)*}) => {{
-        $crate::futures::stream::generate(move |$yielder| Box::pin(async move {
+        $crate::futures::stream::generate_stream(move |$yielder| Box::pin(async move {
             $($tt)*
         }))
+    }};
+
+    ($yielder:ident => $($tt:tt)* ) => {{
+        $crate::stream!(|$yielder| { $($tt)* })
+    }};
+
+    ($yielder:ident move => $($tt:tt)* ) => {{
+       $crate::stream!(|$yielder| move { $($tt)* })
     }};
 }
 
@@ -57,14 +65,23 @@ macro_rules! stream {
 #[macro_export]
 macro_rules! box_stream {
     (|$yielder:ident| { $($tt:tt)*}) => {{
-        Box::pin($crate::futures::stream::generate(|$yielder| Box::pin(async move {
+        Box::pin($crate::futures::stream::generate_stream(|$yielder| Box::pin(async move {
             $($tt)*
         })))
     } as std::pin::Pin<Box<dyn $crate::futures::Stream<Item = _> + Send + '_>>};
 
     (|$yielder:ident| move { $($tt:tt)*}) => {{
-        Box::pin($crate::futures::stream::generate(move |$yielder| Box::pin(async move {
+        Box::pin($crate::futures::stream::generate_stream(move |$yielder| Box::pin(async move {
             $($tt)*
         })))
     } as std::pin::Pin<Box<dyn $crate::futures::Stream<Item = _> + Send + '_>>};
+
+    ($yielder:ident => $($tt:tt)* ) => {{
+        $crate::box_stream!(|$yielder| { $($tt)* })
+    }};
+
+    ($yielder:ident move => $($tt:tt)* ) => {{
+       $crate::box_stream!(|$yielder| move { $($tt)* })
+    }};
 }
+

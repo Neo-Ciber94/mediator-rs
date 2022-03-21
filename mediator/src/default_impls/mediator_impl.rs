@@ -18,6 +18,7 @@ type SharedHandler<H> = Arc<Mutex<HashMap<TypeId, H>>>;
 struct RequestHandlerWrapper {
     #[allow(clippy::type_complexity)]
     handler: Arc<Mutex<dyn FnMut(Box<dyn Any>) -> Box<dyn Any>>>,
+    is_deferred: bool,
 }
 
 impl RequestHandlerWrapper {
@@ -34,6 +35,7 @@ impl RequestHandlerWrapper {
 
         RequestHandlerWrapper {
             handler: Arc::new(Mutex::new(f)),
+            is_deferred: false,
         }
     }
 
@@ -50,16 +52,38 @@ impl RequestHandlerWrapper {
 
         RequestHandlerWrapper {
             handler: Arc::new(Mutex::new(f)),
+            is_deferred: false,
         }
     }
 
-    pub fn handle<Req, Res>(&mut self, req: Req) -> Option<Res>
+    pub fn from_deferred<Res, Req, F>(mut handler: F) -> Self
+    where
+        Res: 'static,
+        Req: Request<Res> + 'static,
+        F: FnMut(Req, DefaultMediator) -> Res + 'static,
+    {
+        let f = move |args: Box<dyn Any>| -> Box<dyn Any> {
+            let (req, mediator) = *args.downcast::<(Req, DefaultMediator)>().unwrap();
+            Box::new(handler(req, mediator))
+        };
+
+        RequestHandlerWrapper {
+            handler: Arc::new(Mutex::new(f)),
+            is_deferred: true,
+        }
+    }
+
+    pub fn handle<Req, Res>(&mut self, req: Req, mediator: Option<DefaultMediator>) -> Option<Res>
     where
         Res: 'static,
         Req: Request<Res> + 'static,
     {
-        let req = Box::new(req);
         let mut handler = self.handler.lock().unwrap();
+        let req: Box<dyn Any> = match mediator {
+            Some(mediator) => Box::new((req, mediator)),
+            None => Box::new(req),
+        };
+
         let res = (handler)(req);
         res.downcast::<Res>().map(|res| *res).ok()
     }
@@ -71,6 +95,7 @@ impl RequestHandlerWrapper {
 struct EventHandlerWrapper {
     #[allow(clippy::type_complexity)]
     handler: Arc<Mutex<dyn FnMut(Box<dyn Any>)>>,
+    is_deferred: bool
 }
 
 impl EventHandlerWrapper {
@@ -86,6 +111,7 @@ impl EventHandlerWrapper {
 
         EventHandlerWrapper {
             handler: Arc::new(Mutex::new(f)),
+            is_deferred: false
         }
     }
 
@@ -101,15 +127,36 @@ impl EventHandlerWrapper {
 
         EventHandlerWrapper {
             handler: Arc::new(Mutex::new(f)),
+            is_deferred: false
         }
     }
 
-    pub fn handle<E>(&mut self, event: E)
+    pub fn from_deferred<E, F>(mut handler: F) -> Self
+    where
+        E: Event + 'static,
+        F: FnMut(E, DefaultMediator) + 'static,
+    {
+        let f = move |args: Box<dyn Any>| {
+            let (event, mediator) = *args.downcast::<(E, DefaultMediator)>().unwrap();
+            handler(event, mediator);
+        };
+
+        EventHandlerWrapper {
+            handler: Arc::new(Mutex::new(f)),
+            is_deferred: true
+        }
+    }
+
+    pub fn handle<E>(&mut self, event: E, mediator: Option<DefaultMediator>)
     where
         E: Event + 'static,
     {
-        let event = Box::new(event);
         let mut handler = self.handler.lock().unwrap();
+        let event: Box<dyn Any> = match mediator {
+            Some(mediator) => Box::new((event, mediator)),
+            None => Box::new(event),
+        };
+
         (handler)(event);
     }
 }
@@ -121,6 +168,7 @@ impl EventHandlerWrapper {
 struct StreamRequestHandlerWrapper {
     #[allow(clippy::type_complexity)]
     handler: Arc<Mutex<dyn FnMut(Box<dyn Any>) -> Box<dyn Any>>>,
+    is_deferred: bool
 }
 
 #[cfg(feature = "streams")]
@@ -139,6 +187,7 @@ impl StreamRequestHandlerWrapper {
 
         StreamRequestHandlerWrapper {
             handler: Arc::new(Mutex::new(f)),
+            is_deferred: false
         }
     }
 
@@ -156,17 +205,40 @@ impl StreamRequestHandlerWrapper {
 
         StreamRequestHandlerWrapper {
             handler: Arc::new(Mutex::new(f)),
+            is_deferred: false
         }
     }
 
-    pub fn handle<Req, S, T>(&mut self, req: Req) -> Option<S>
+    pub fn from_deferred<Req, S, T, F>(mut handler: F) -> Self
+    where
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        S: Stream<Item = T> + 'static,
+        F: FnMut(Req, DefaultMediator) -> S + 'static,
+        T: 'static,
+    {
+        let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
+            let (req, mediator) = *req.downcast::<(Req, DefaultMediator)>().unwrap();
+            Box::new(handler(req, mediator))
+        };
+
+        StreamRequestHandlerWrapper {
+            handler: Arc::new(Mutex::new(f)),
+            is_deferred: true
+        }
+    }
+
+    pub fn handle<Req, S, T>(&mut self, req: Req, mediator: Option<DefaultMediator>) -> Option<S>
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
-        let req = Box::new(req);
         let mut handler = self.handler.lock().unwrap();
+        let req: Box<dyn Any> = match mediator {
+            Some(mediator) => Box::new((req, mediator)),
+            None => Box::new(req),
+        };
+
         let res = (handler)(req);
         res.downcast::<S>().map(|res| *res).ok()
     }
@@ -270,7 +342,13 @@ impl Mediator for DefaultMediator {
             // Drop the lock to avoid deadlocks
             drop(handlers_lock);
 
-            if let Some(res) = handler.handle(req) {
+            let mediator = if handler.is_deferred {
+                Some(self.clone())
+            } else {
+                None
+            };
+
+            if let Some(res) = handler.handle(req, mediator) {
                 return Ok(res);
             }
         }
@@ -294,7 +372,13 @@ impl Mediator for DefaultMediator {
             drop(handlers_lock);
 
             for mut handler in handlers {
-                handler.handle(event.clone());
+                let mediator = if handler.is_deferred {
+                    Some(self.clone())
+                } else {
+                    None
+                };
+
+                handler.handle(event.clone(), mediator);
             }
 
             Ok(())
@@ -320,7 +404,13 @@ impl Mediator for DefaultMediator {
             // Drop the lock to avoid deadlocks
             drop(handlers_lock);
 
-            if let Some(stream) = handler.handle(req) {
+            let mediator = if handler.is_deferred {
+                Some(self.clone())
+            } else {
+                None
+            };
+
+            if let Some(stream) = handler.handle(req, mediator) {
                 return Ok(stream);
             }
         }
@@ -387,15 +477,19 @@ impl Builder {
     }
 
     /// Registers a request handler from a function using a copy of the mediator.
-    pub fn add_handler_fn_deferred<Req, Res, H, F>(self, f: F) -> Self
+    pub fn add_handler_fn_deferred<Req, Res, F>(self, f: F) -> Self
     where
         Res: 'static,
         Req: Request<Res> + 'static,
-        H: FnMut(Req) -> Res + 'static,
-        F: Fn(DefaultMediator) -> H + 'static,
+        F: FnMut(Req, DefaultMediator) -> Res + 'static,
     {
-        let handler = f(self.inner.clone());
-        self.add_handler_fn(handler)
+        let mut handlers_lock = self.inner.request_handlers.lock().unwrap();
+        handlers_lock.insert(
+            TypeId::of::<Req>(),
+            RequestHandlerWrapper::from_deferred(f),
+        );
+        drop(handlers_lock);
+        self
     }
 
     /// Registers an event handler.
@@ -441,13 +535,17 @@ impl Builder {
 
     /// Registers an event handler from a function using a copy of the mediator.
     pub fn subscribe_fn_deferred<E, H, F>(self, f: F) -> Self
-    where
-        E: Event + 'static,
-        H: FnMut(E) + 'static,
-        F: Fn(DefaultMediator) -> H + 'static,
+        where
+            E: Event + 'static,
+            F: FnMut(E, DefaultMediator) + 'static,
     {
-        let handler = f(self.inner.clone());
-        self.subscribe_fn(handler)
+        let mut handlers_lock = self.inner.event_handlers.lock().unwrap();
+        let event_handlers = handlers_lock
+            .entry(TypeId::of::<E>())
+            .or_insert_with(Vec::new);
+        event_handlers.push(EventHandlerWrapper::from_deferred(f));
+        drop(handlers_lock);
+        self
     }
 
     /// Registers a stream handler.
@@ -499,16 +597,17 @@ impl Builder {
 
     /// Registers a stream handler from a function using a copy of the mediator.
     #[cfg(feature = "streams")]
-    pub fn add_stream_handler_fn_deferred<Req, S, T, F, H>(self, f: F) -> Self
-    where
-        Req: StreamRequest<Stream = S, Item = T> + 'static,
-        H: FnMut(Req) -> S + 'static,
-        F: Fn(DefaultMediator) -> H + 'static,
-        S: Stream<Item = T> + 'static,
-        T: 'static,
+    pub fn add_stream_handler_fn_deferred<Req, S, T, F>(self, f: F) -> Self
+        where
+            Req: StreamRequest<Stream = S, Item = T> + 'static,
+            F: FnMut(Req, DefaultMediator) -> S + 'static,
+            S: Stream<Item = T> + 'static,
+            T: 'static,
     {
-        let handler = f(self.inner.clone());
-        self.add_stream_handler_fn(handler)
+        let mut handlers_lock = self.inner.stream_handlers.lock().unwrap();
+        handlers_lock.insert(TypeId::of::<Req>(), StreamRequestHandlerWrapper::from_deferred(f));
+        drop(handlers_lock);
+        self
     }
 
     /// Builds the `DefaultMediator`.

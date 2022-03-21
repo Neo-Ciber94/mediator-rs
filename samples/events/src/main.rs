@@ -1,6 +1,6 @@
-use std::io;
 use colored::Colorize;
 use mediator::{DefaultMediator, Event, Mediator};
+use std::io;
 
 #[derive(Clone)]
 struct UpperTextEvent(String);
@@ -24,13 +24,19 @@ fn main() {
 
     loop {
         let mut buf = String::new();
-        io::stdin().read_line(&mut buf).expect("Failed to read line");
+        io::stdin()
+            .read_line(&mut buf)
+            .expect("Failed to read line");
 
         if buf.trim() == "exit" {
             break;
         }
 
-        mediator.publish(UpperTextEvent(buf.clone())).expect("Failed to publish event");
-        mediator.publish(ReverseTextEvent(buf)).expect("Failed to publish event");
+        mediator
+            .publish(UpperTextEvent(buf.clone()))
+            .expect("Failed to publish event");
+        mediator
+            .publish(ReverseTextEvent(buf))
+            .expect("Failed to publish event");
     }
 }
