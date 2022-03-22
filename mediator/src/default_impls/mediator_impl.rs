@@ -624,8 +624,8 @@ impl Default for Builder {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Range;
     use crate::{DefaultMediator, Event, EventHandler, Mediator, Request, RequestHandler};
+    use std::ops::Range;
     use std::sync::atomic::AtomicUsize;
 
     #[cfg(feature = "streams")]

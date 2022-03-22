@@ -92,6 +92,9 @@ pub use streams::*;
 #[cfg(feature = "async")]
 pub mod futures;
 
+#[cfg(feature = "async")]
+pub use async_trait::async_trait;
+
 // Default implementations.
 #[cfg(feature = "impls")]
 mod default_impls;

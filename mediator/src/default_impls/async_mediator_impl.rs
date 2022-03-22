@@ -473,6 +473,7 @@ impl Builder {
     {
         let mediator = self.inner.clone();
 
+        // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async move {
@@ -495,6 +496,7 @@ impl Builder {
     {
         let mediator = self.inner.clone();
 
+        // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async move {
@@ -528,6 +530,7 @@ impl Builder {
     {
         let mediator = self.inner.clone();
 
+        // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async move {
@@ -547,6 +550,7 @@ impl Builder {
     {
         let mediator = self.inner.clone();
 
+        // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async move {
@@ -569,6 +573,7 @@ impl Builder {
     {
         let mediator = self.inner.clone();
 
+        // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async move {
@@ -580,6 +585,30 @@ impl Builder {
         });
 
         self
+    }
+
+    pub fn subscribe_fn_with<E, H, F, State>(self, handler: H, state: State) -> Self
+        where
+            E: Event + Send + 'static,
+            F: Future<Output = ()> + Send + 'static,
+            H: FnMut(E, State) -> F + Send + 'static,
+    {
+        {
+            let mediator = self.inner.clone();
+
+            // FIXME: Find a way to prevent using async in the builder
+            // We block the thread to keep the api signature consistent and don't require await
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async move {
+                    let handler = EventHandlerWrapper::from_fn(handler);
+                    let mut handlers = mediator.event_handlers.lock().await;
+                    let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
+                    event_handlers.push(handler);
+                });
+            });
+
+            self
+        }
     }
 
     /// Registers an event handler using a copy of the mediator.
@@ -602,6 +631,7 @@ impl Builder {
     {
         let mediator = self.inner.clone();
 
+        // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async move {
@@ -694,11 +724,14 @@ impl Default for Builder {
 
 #[cfg(test)]
 mod test {
+    use crate::futures::BoxStream;
+    use crate::{
+        box_stream, AsyncMediator, AsyncRequestHandler, DefaultAsyncMediator, Event, Request,
+        StreamRequest,
+    };
     use std::marker::PhantomData;
     use std::sync::atomic::AtomicI64;
     use tokio_stream::StreamExt;
-    use crate::{AsyncMediator, AsyncRequestHandler, box_stream, DefaultAsyncMediator, Event, Request, StreamRequest};
-    use crate::futures::BoxStream;
 
     // To prevent: can call blocking only when running on the multi-threaded runtime
     #[tokio::test(flavor = "multi_thread")]
@@ -724,7 +757,10 @@ mod test {
         let res1 = mediator.send(WaitAndGetRequest(1)).await.unwrap();
         assert_eq!(res1, 1);
 
-        let res2 = mediator.send(WaitAndGetRequest("hello".to_owned())).await.unwrap();
+        let res2 = mediator
+            .send(WaitAndGetRequest("hello".to_owned()))
+            .await
+            .unwrap();
         assert_eq!(res2, "hello".to_owned());
     }
 
@@ -739,7 +775,7 @@ mod test {
         struct DecEvent(u32);
         impl Event for DecEvent {}
 
-        static VALUE : AtomicI64 = AtomicI64::new(0);
+        static VALUE: AtomicI64 = AtomicI64::new(0);
 
         let mut mediator = DefaultAsyncMediator::builder()
             .subscribe_fn(|event: IncEvent| async move {
