@@ -209,6 +209,26 @@ impl StreamRequestHandlerWrapper {
         }
     }
 
+    pub fn from_fn_with<State, Req, S, T, F>(mut handler: F, state: State) -> Self
+        where
+            State: Send + Clone + 'static,
+            Req: StreamRequest<Stream = S, Item = T> + 'static,
+            S: Stream<Item = T> + 'static,
+            F: FnMut(Req, State) -> S + 'static,
+            T: 'static,
+    {
+        let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
+            let req = *req.downcast::<Req>().unwrap();
+            Box::new(handler(req, state.clone()))
+        };
+
+        StreamRequestHandlerWrapper {
+            handler: Arc::new(Mutex::new(f)),
+            is_deferred: false,
+        }
+    }
+
+
     pub fn from_deferred<Req, S, T, F>(mut handler: F) -> Self
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,
@@ -219,6 +239,25 @@ impl StreamRequestHandlerWrapper {
         let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
             let (req, mediator) = *req.downcast::<(Req, DefaultMediator)>().unwrap();
             Box::new(handler(req, mediator))
+        };
+
+        StreamRequestHandlerWrapper {
+            handler: Arc::new(Mutex::new(f)),
+            is_deferred: true,
+        }
+    }
+
+    pub fn from_deferred_with<State, Req, S, T, F>(mut handler: F, state: State) -> Self
+        where
+            State: Send + Clone + 'static,
+            Req: StreamRequest<Stream = S, Item = T> + 'static,
+            S: Stream<Item = T> + 'static,
+            F: FnMut(Req, DefaultMediator, State) -> S + 'static,
+            T: 'static,
+    {
+        let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
+            let (req, mediator) = *req.downcast::<(Req, DefaultMediator)>().unwrap();
+            Box::new(handler(req, mediator, state.clone()))
         };
 
         StreamRequestHandlerWrapper {
@@ -578,6 +617,21 @@ impl Builder {
         self
     }
 
+    #[cfg(feature = "streams")]
+    pub fn add_stream_handler_fn_with<State, Req, S, T, F>(self, state: State, f: F) -> Self
+        where
+            State: Send + Clone + 'static,
+            Req: StreamRequest<Stream = S, Item = T> + 'static,
+            F: FnMut(Req, State) -> S + 'static,
+            S: Stream<Item = T> + 'static,
+            T: 'static,
+    {
+        let mut handlers_lock = self.inner.stream_handlers.lock().unwrap();
+        handlers_lock.insert(TypeId::of::<Req>(), StreamRequestHandlerWrapper::from_fn_with(f, state));
+        drop(handlers_lock);
+        self
+    }
+
     /// Registers a stream handler using a copy of the mediator.
     #[cfg(feature = "streams")]
     pub fn add_stream_handler_deferred<Req, S, T, H, F>(self, f: F) -> Self
@@ -605,6 +659,24 @@ impl Builder {
         handlers_lock.insert(
             TypeId::of::<Req>(),
             StreamRequestHandlerWrapper::from_deferred(f),
+        );
+        drop(handlers_lock);
+        self
+    }
+
+    #[cfg(feature = "streams")]
+    pub fn add_stream_handler_fn_deferred_with<State, Req, S, T, F>(self, state: State, f: F) -> Self
+        where
+            State: Send + Clone + 'static,
+            Req: StreamRequest<Stream = S, Item = T> + 'static,
+            F: FnMut(Req, DefaultMediator, State) -> S + 'static,
+            S: Stream<Item = T> + 'static,
+            T: 'static,
+    {
+        let mut handlers_lock = self.inner.stream_handlers.lock().unwrap();
+        handlers_lock.insert(
+            TypeId::of::<Req>(),
+            StreamRequestHandlerWrapper::from_deferred_with(f, state),
         );
         drop(handlers_lock);
         self
