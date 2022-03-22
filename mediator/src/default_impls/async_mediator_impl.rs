@@ -693,4 +693,96 @@ impl Default for Builder {
 }
 
 #[cfg(test)]
-mod test {}
+mod test {
+    use std::marker::PhantomData;
+    use std::sync::atomic::AtomicI64;
+    use tokio_stream::StreamExt;
+    use crate::{AsyncMediator, AsyncRequestHandler, box_stream, DefaultAsyncMediator, Event, Request, StreamRequest};
+    use crate::futures::BoxStream;
+
+    // To prevent: can call blocking only when running on the multi-threaded runtime
+    #[tokio::test(flavor = "multi_thread")]
+    async fn send_test() {
+        struct WaitAndGetRequest<T>(T);
+        impl<T: Send> Request<T> for WaitAndGetRequest<T> {}
+
+        struct WaitAndSendRequestHandler<T>(PhantomData<T>);
+
+        #[async_trait::async_trait]
+        impl<T: Send> AsyncRequestHandler<WaitAndGetRequest<T>, T> for WaitAndSendRequestHandler<T> {
+            async fn handle(&mut self, req: WaitAndGetRequest<T>) -> T {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                req.0
+            }
+        }
+
+        let mut mediator = DefaultAsyncMediator::builder()
+            .add_handler(WaitAndSendRequestHandler::<i32>(PhantomData))
+            .add_handler(WaitAndSendRequestHandler::<String>(PhantomData))
+            .build();
+
+        let res1 = mediator.send(WaitAndGetRequest(1)).await.unwrap();
+        assert_eq!(res1, 1);
+
+        let res2 = mediator.send(WaitAndGetRequest("hello".to_owned())).await.unwrap();
+        assert_eq!(res2, "hello".to_owned());
+    }
+
+    // To prevent: can call blocking only when running on the multi-threaded runtime
+    #[tokio::test(flavor = "multi_thread")]
+    async fn publish_test() {
+        #[derive(Clone)]
+        struct IncEvent(u32);
+        impl Event for IncEvent {}
+
+        #[derive(Clone)]
+        struct DecEvent(u32);
+        impl Event for DecEvent {}
+
+        static VALUE : AtomicI64 = AtomicI64::new(0);
+
+        let mut mediator = DefaultAsyncMediator::builder()
+            .subscribe_fn(|event: IncEvent| async move {
+                VALUE.fetch_add(event.0 as i64, std::sync::atomic::Ordering::SeqCst);
+            })
+            .subscribe_fn(|event: DecEvent| async move {
+                VALUE.fetch_sub(event.0 as i64, std::sync::atomic::Ordering::SeqCst);
+            })
+            .build();
+
+        mediator.publish(IncEvent(1)).await.unwrap();
+        mediator.publish(IncEvent(2)).await.unwrap();
+        mediator.publish(IncEvent(3)).await.unwrap();
+        mediator.publish(DecEvent(2)).await.unwrap();
+
+        assert_eq!(VALUE.load(std::sync::atomic::Ordering::SeqCst), 4);
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "streams")]
+    async fn stream_test() {
+        struct CounterRequest(u64);
+        impl StreamRequest for CounterRequest {
+            type Stream = BoxStream<'static, u64>;
+            type Item = u64;
+        }
+
+        let mut mediator = DefaultAsyncMediator::builder()
+            .add_stream_handler_fn(|req: CounterRequest| {
+                box_stream! { yx move =>
+                    for i in 0..req.0 {
+                        yx.yield_one(i);
+                    }
+                }
+            })
+            .build();
+
+        let mut stream = mediator.stream(CounterRequest(4)).unwrap();
+
+        assert_eq!(stream.next().await.unwrap(), 0);
+        assert_eq!(stream.next().await.unwrap(), 1);
+        assert_eq!(stream.next().await.unwrap(), 2);
+        assert_eq!(stream.next().await.unwrap(), 3);
+        assert!(stream.next().await.is_none());
+    }
+}

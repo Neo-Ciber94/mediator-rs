@@ -624,6 +624,7 @@ impl Default for Builder {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Range;
     use crate::{DefaultMediator, Event, EventHandler, Mediator, Request, RequestHandler};
     use std::sync::atomic::AtomicUsize;
 
@@ -710,24 +711,22 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "streams")]
     async fn create_stream_test() {
-        use std::vec::IntoIter;
         use tokio_stream::StreamExt;
 
         struct CounterRequest(u32);
         impl StreamRequest for CounterRequest {
-            type Stream = tokio_stream::Iter<IntoIter<u32>>;
+            type Stream = tokio_stream::Iter<Range<u32>>;
             type Item = u32;
         }
 
         struct CounterRequestHandler;
         impl StreamRequestHandler for CounterRequestHandler {
             type Request = CounterRequest;
-            type Stream = tokio_stream::Iter<IntoIter<u32>>;
+            type Stream = tokio_stream::Iter<Range<u32>>;
             type Item = u32;
 
-            fn handle_stream(&mut self, req: CounterRequest) -> tokio_stream::Iter<IntoIter<u32>> {
-                let values = (0..req.0).collect::<Vec<_>>();
-                tokio_stream::iter(values)
+            fn handle_stream(&mut self, req: CounterRequest) -> Self::Stream {
+                tokio_stream::iter(0..req.0)
             }
         }
 
