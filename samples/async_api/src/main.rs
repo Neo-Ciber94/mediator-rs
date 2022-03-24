@@ -53,13 +53,20 @@ async fn main() {
     let service = Arc::new(Mutex::new(UserService(vec![])));
     let total_users = Arc::new(Mutex::new(0_usize));
 
+    let s = service.clone();
     let mut mediator = DefaultAsyncMediator::builder()
         .add_handler_deferred(|m| CreateUserRequestHandler(service.clone(), m))
-        .add_handler(GetAllUsersRequestHandler(service.clone()))
+        //.add_handler(GetAllUsersRequestHandler(service.clone()))
         .subscribe_fn_with(total_users.clone(), |event: UserCreatedEvent, total: Arc<Mutex<usize>>| async move {
             println!("User created: {:?}", event.0.name);
             let mut lock = total.lock().await;
             *lock += 1;
+        })
+        .add_handler(move |req: GetAllUsersRequest| async move {
+
+            let service = s.lock().await;
+            let users = service.0.clone();
+            users
         })
         .build();
 

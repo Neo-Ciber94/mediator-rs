@@ -48,18 +48,21 @@
 //!             }
 //!         };
 //!
-//!         self.0.publish(MathEvent(req.0, result));
+//!         self.0.publish(MathEvent(req.0, result)).expect("publish failed");
 //!         result
 //!     }
 //! }
 //!
 //! fn main() {
 //!     let mut mediator = DefaultMediator::builder()
-//!         .add_handler_deferred(|m| MathRequestHandler(m))
+//!         .add_handler_deferred(MathRequestHandler)
 //!         .subscribe_fn(|event: MathEvent| {
 //!            println!("{:?}", event);
 //!          })
 //!         .build();
+//!
+//!     let result = mediator.send(MathRequest(Op::Add(1.0, 2.0))).expect("send failed");
+//!     assert_eq!(result, Some(3.0));
 //! }
 //! ```
 

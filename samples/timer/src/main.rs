@@ -1,5 +1,8 @@
 use mediator::futures::Stream;
-use mediator::{futures, futures::StreamExt, DefaultMediator, Event, Mediator, StreamRequest, StreamRequestHandler, box_stream};
+use mediator::{
+    box_stream, futures, futures::StreamExt, DefaultMediator, Event, Mediator, StreamRequest,
+    StreamRequestHandler,
+};
 use std::pin::Pin;
 use std::time::Duration;
 

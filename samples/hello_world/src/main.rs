@@ -24,9 +24,3 @@ fn main() {
     let response = mediator.send(HelloRequest(None)).unwrap();
     println!("{}", response);
 }
-
-mod _mediator {
-    pub trait Mediator {}
-
-    pub trait AsyncMediator {}
-}

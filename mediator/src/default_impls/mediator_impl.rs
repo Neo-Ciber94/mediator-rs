@@ -476,7 +476,7 @@ impl Builder {
             },
         }
     }
-
+    
     /// Registers a request handler.
     pub fn add_handler<Req, Res, H>(self, handler: H) -> Self
     where

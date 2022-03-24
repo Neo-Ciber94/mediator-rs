@@ -234,6 +234,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "async_api"
+version = "0.1.0"
+dependencies = [
+ "mediator",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
