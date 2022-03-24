@@ -36,16 +36,6 @@ impl StreamRequestHandler for TimerRequestHandler {
 async fn main() {
     let mut mediator = DefaultMediator::builder()
         .add_stream_handler_deferred(TimerRequestHandler)
-        // .add_stream_handler_fn_deferred(|req: TimerRequest, mut mediator: DefaultMediator| {
-        //     box_stream! { yx move =>
-        //         for i in 0..req.0 {
-        //             tokio::time::sleep(Duration::from_millis(1000)).await;
-        //             let s = i + 1;
-        //             yx.yield_one(s);
-        //             mediator.publish(SecondPassedEvent(s)).expect("publish failed");
-        //         }
-        //     }
-        // })
         .subscribe_fn(|event: SecondPassedEvent| {
             println!("{} second passed", event.0);
         })
