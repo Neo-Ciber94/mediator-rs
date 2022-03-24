@@ -1,3 +1,4 @@
+
 /// Represents an application event.
 pub trait Event: Clone {}
 
@@ -13,4 +14,28 @@ pub trait EventHandler<E: Event> {
 pub trait AsyncEventHandler<E: Event> {
     /// Handles an event.
     async fn handle(&mut self, event: E);
+}
+
+///////////////////// Implementations /////////////////////
+
+impl<E, F> EventHandler<E> for F
+where
+    E: Event,
+    F: FnMut(E),
+{
+    fn handle(&mut self, event: E) {
+        self(event)
+    }
+}
+
+#[cfg(feature = "async")]
+#[cfg_attr(feature = "async", async_trait::async_trait)]
+impl<E, F> AsyncEventHandler<E> for F
+where
+    E: Event + Send + 'static,
+    F: FnMut(E) -> crate::futures::BoxFuture<'static, ()> + Send,
+{
+    async fn handle(&mut self, event: E) {
+        self(event).await
+    }
 }

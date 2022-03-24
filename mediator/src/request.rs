@@ -21,6 +21,8 @@ where
     async fn handle(&mut self, req: Req) -> Res;
 }
 
+///////////////////// Implementations /////////////////////
+
 impl<Req, Res, F> RequestHandler<Req, Res> for F
 where
     F: FnMut(Req) -> Res,
