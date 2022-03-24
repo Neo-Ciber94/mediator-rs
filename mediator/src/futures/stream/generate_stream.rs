@@ -87,6 +87,7 @@ where
 {
     type Item = T;
 
+    #[allow(clippy::never_loop)]
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let StreamGenerator {
             builder,

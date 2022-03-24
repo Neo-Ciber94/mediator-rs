@@ -52,5 +52,5 @@ async fn main() {
         .build();
 
     let mut stream = mediator.stream(TimerRequest(5)).unwrap();
-    while let Some(_) = stream.next().await {}
+    while stream.next().await.is_some() {}
 }

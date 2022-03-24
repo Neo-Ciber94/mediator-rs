@@ -43,6 +43,7 @@ impl AsyncRequestHandler<CreateUserRequest, User> for CreateUserRequestHandler {
 }
 
 #[tokio::main]
+#[allow(clippy::let_and_return)]
 async fn main() {
     let service = Arc::new(Mutex::new(UserService(vec![])));
     let total_users = Arc::new(Mutex::new(0_usize));
