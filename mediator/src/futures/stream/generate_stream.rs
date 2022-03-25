@@ -56,7 +56,7 @@ where
 
 struct StreamGenerator<T, B, F> {
     builder: Option<B>,
-    yielder: Yielder<T>,
+    yielder: Option<Yielder<T>>,
     receiver: Receiver<T>,
     future: Option<F>,
     done: bool,
@@ -66,9 +66,10 @@ impl<T, B, F> Unpin for StreamGenerator<T, B, F> {}
 
 impl<T, B, F> StreamGenerator<T, B, F> {
     pub fn new(builder: B) -> Self {
+        // We just use an arbitrary channel bound here
         let (sender, receiver) = channel();
         let builder = Some(builder);
-        let yielder = Yielder { sender };
+        let yielder = Some(Yielder::new(sender));
 
         StreamGenerator {
             builder,
@@ -110,8 +111,9 @@ where
             match future {
                 Some(f) => f,
                 None => {
-                    let builder = builder.take().unwrap();
-                    future.get_or_insert(builder(yielder.clone()))
+                    let builder = builder.take().expect("Builder was already called");
+                    let yielder = yielder.take().unwrap();
+                    future.get_or_insert(builder(yielder))
                 }
             }
         };

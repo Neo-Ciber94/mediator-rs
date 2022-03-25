@@ -750,39 +750,9 @@ mod tests {
         assert_eq!(3, COUNTER.load(std::sync::atomic::Ordering::SeqCst));
     }
 
-    #[tokio::test]
-    #[cfg(feature = "async")]
-    async fn async_send_test() {
-        use std::future::Future;
-        use std::pin::Pin;
-
-        type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
-
-        struct CounterRequest(i64);
-        impl Request<BoxFuture<i64>> for CounterRequest {}
-
-        struct CounterRequestHandler;
-        impl RequestHandler<CounterRequest, BoxFuture<i64>> for CounterRequestHandler {
-            fn handle(&mut self, req: CounterRequest) -> BoxFuture<i64> {
-                let result = async move { req.0 };
-                Box::pin(result)
-            }
-        }
-
-        let mut mediator = DefaultMediator::builder()
-            .add_handler(CounterRequestHandler)
-            .build();
-
-        let result = mediator.send(CounterRequest(1)).unwrap().await;
-        assert_eq!(1, result);
-
-        let result = mediator.send(CounterRequest(2)).unwrap().await;
-        assert_eq!(2, result);
-    }
-
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     #[cfg(feature = "streams")]
-    async fn create_stream_test() {
+    async fn stream_test() {
         use tokio_stream::StreamExt;
 
         struct CounterRequest(u32);

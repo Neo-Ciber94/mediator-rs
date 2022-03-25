@@ -83,3 +83,54 @@ macro_rules! box_stream {
        $crate::box_stream!(|$yielder| move { $($tt)* })
     }};
 }
+
+#[cfg(test)]
+mod tests {
+    use tokio_stream::StreamExt;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn stream_test() {
+        let mut stream = stream!(|yx| {
+            yx.yield_one(1);
+            yx.yield_one(2);
+            yx.yield_one(3);
+
+            yx.yield_all(vec![4, 5, 6]);
+
+            yx.yield_stream(stream!(|yx2| {
+                yx2.yield_one(7);
+                yx2.yield_one(8);
+                yx2.yield_one(9);
+                yx2.yield_one(10);
+            })).await;
+        });
+
+        for i in 1..=10 {
+            assert_eq!(stream.next().await, Some(i));
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn box_stream_test() {
+        let mut stream = box_stream!(|yx| {
+            yx.yield_one(1);
+            yx.yield_one(2);
+            yx.yield_one(3);
+
+            yx.yield_all(vec![4, 5, 6]);
+
+            let x = yx.yield_stream(box_stream!(|yx2| {
+                yx2.yield_one(7);
+                yx2.yield_one(8);
+                yx2.yield_one(9);
+                yx2.yield_one(10);
+            }));
+
+            x.await;
+        });
+
+        for i in 1..=10 {
+            assert_eq!(stream.next().await, Some(i));
+        }
+    }
+}
