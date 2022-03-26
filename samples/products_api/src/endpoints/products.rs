@@ -17,7 +17,7 @@ pub async fn create(
         .expect("Unable to send command");
 
     HttpResponse::Created()
-        .insert_header(("Location", format!("/products/{}", result.id)))
+        .insert_header(("Location", format!("/api/products/{}", result.id)))
         .json(result)
 }
 
@@ -37,7 +37,7 @@ pub async fn update(
     }
 }
 
-#[delete("/{id}")]
+#[delete("/{id}/")]
 pub async fn delete(path: web::Path<Uuid>, mediator: Data<SharedMediator>) -> impl Responder {
     let uuid = path.into_inner();
     let mut mediator = mediator.try_lock().expect("Unable to lock mediator");
@@ -51,9 +51,10 @@ pub async fn delete(path: web::Path<Uuid>, mediator: Data<SharedMediator>) -> im
     }
 }
 
-#[get("/{id}")]
-pub async fn get(path: web::Path<Uuid>, mediator: Data<SharedMediator>) -> impl Responder {
-    let uuid = path.into_inner();
+#[get("/{id}/")]
+pub async fn get(path: web::Path<Uuid> ,mediator: Data<SharedMediator>) -> impl Responder {
+    let uuid =  path.into_inner();
+    log::info!("Getting product with id: {}", uuid);
     let mut mediator = mediator.try_lock().expect("Unable to lock mediator");
     let result = mediator
         .send(GetProductRequest(uuid))

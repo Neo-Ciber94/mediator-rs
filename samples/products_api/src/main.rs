@@ -1,3 +1,5 @@
+extern crate core;
+
 mod commands;
 mod endpoints;
 mod events;
@@ -30,7 +32,7 @@ async fn main() -> std::io::Result<()> {
     let redis_service = create_redis_service::<Product>("products");
     let mediator = create_mediator_service(&redis_service);
 
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         App::new()
             .wrap(middleware::NormalizePath::new(TrailingSlash::Always))
             .wrap(middleware::Logger::default())
@@ -46,8 +48,14 @@ async fn main() -> std::io::Result<()> {
             )
     })
     .bind(("0.0.0.0", port))?
-    .run()
-    .await
+    .run();
+
+    // On server start
+    tokio::join!(server, on_server_start()).0
+}
+
+async fn on_server_start() {
+    log::info!("Sync server started");
 }
 
 fn create_mediator_service(redis: &SharedRedisService<Product>) -> SharedMediator {

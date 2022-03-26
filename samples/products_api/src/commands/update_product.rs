@@ -7,8 +7,8 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateProductCommand {
     pub id: Uuid,
-    pub name: String,
-    pub price: f32,
+    pub name: Option<String>,
+    pub price: Option<f32>,
 }
 
 impl Request<Option<Product>> for UpdateProductCommand {}
@@ -20,9 +20,13 @@ impl RequestHandler<UpdateProductCommand, Option<Product>> for UpdateProductRequ
 
         let id = command.id.to_string();
         let mut product = redis.get(&id).expect("Could not get the product")?;
-        product.name = command.name;
-        product.price = command.price;
-        product.updated_at = chrono::Utc::now();
+        let will_update = command.name.is_some() || command.price.is_some();
+        product.name = command.name.unwrap_or(product.name);
+        product.price = command.price.unwrap_or(product.price);
+
+        if will_update {
+            product.updated_at = chrono::Utc::now();
+        }
 
         redis
             .set(&id, product.clone())
