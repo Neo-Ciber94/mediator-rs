@@ -988,9 +988,9 @@ mod test {
     };
     use std::marker::PhantomData;
     use std::sync::atomic::AtomicI64;
+    use std::sync::{Arc, Mutex};
     use tokio_stream::StreamExt;
 
-    // To prevent: can call blocking only when running on the multi-threaded runtime
     #[tokio::test(flavor = "multi_thread")]
     async fn send_test() {
         struct WaitAndGetRequest<T>(T);
@@ -1021,7 +1021,6 @@ mod test {
         assert_eq!(res2, "hello".to_owned());
     }
 
-    // To prevent: can call blocking only when running on the multi-threaded runtime
     #[tokio::test(flavor = "multi_thread")]
     async fn publish_test() {
         #[derive(Clone)]
@@ -1051,7 +1050,7 @@ mod test {
         assert_eq!(VALUE.load(std::sync::atomic::Ordering::SeqCst), 4);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     #[cfg(feature = "streams")]
     async fn stream_test() {
         struct CounterRequest(u64);
@@ -1077,5 +1076,25 @@ mod test {
         assert_eq!(stream.next().await.unwrap(), 2);
         assert_eq!(stream.next().await.unwrap(), 3);
         assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn add_handler_fn_with_test() {
+        struct CountRequest(u32);
+        impl Request<()> for CountRequest {}
+
+        let counter = Arc::new(Mutex::new(0));
+
+        let mut mediator = DefaultAsyncMediator::builder()
+            .add_handler_fn_with(counter.clone(), |req: CountRequest, c| async move {
+                *c.lock().unwrap() += req.0;
+            })
+            .build();
+
+        mediator.send(CountRequest(1)).await.unwrap();
+        mediator.send(CountRequest(2)).await.unwrap();
+        mediator.send(CountRequest(3)).await.unwrap();
+
+        assert_eq!(*counter.lock().unwrap(), 6);
     }
 }

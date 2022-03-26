@@ -664,6 +664,7 @@ impl Builder {
         self
     }
 
+    /// Register a stream handler from a function using a copy of the mediator and a state.
     #[cfg(feature = "streams")]
     pub fn add_stream_handler_fn_deferred_with<State, Req, S, T, F>(self, state: State, f: F) -> Self
         where
@@ -696,12 +697,24 @@ impl Default for Builder {
 
 #[cfg(test)]
 mod tests {
-    use crate::{DefaultMediator, Event, EventHandler, Mediator, Request, RequestHandler};
+    use crate::{box_stream, DefaultMediator, Event, EventHandler, Mediator, Request, RequestHandler};
     use std::ops::Range;
     use std::sync::atomic::AtomicUsize;
+    use std::sync::{Arc, Mutex};
 
     #[cfg(feature = "streams")]
     use crate::{StreamRequest, StreamRequestHandler};
+
+    #[cfg(feature = "streams")]
+    use crate::futures::BoxStream;
+
+    #[cfg(feature = "streams")]
+    macro_rules! drain_stream {
+        ($stream:expr) => {{
+            let mut stream = $stream;
+            while crate::futures::StreamExt::next(&mut stream).await.is_some() {}
+        }};
+    }
 
     #[test]
     fn send_request_test() {
@@ -783,5 +796,48 @@ mod tests {
         assert_eq!(3, counter_stream.next().await.unwrap());
         assert_eq!(4, counter_stream.next().await.unwrap());
         assert!(counter_stream.next().await.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(feature = "streams")]
+    async fn stream_deferred_fn_with_test() {
+        struct CounterRequest(u32);
+        impl StreamRequest for CounterRequest {
+            type Stream = BoxStream<'static, u32>;
+            type Item = u32;
+        }
+
+        #[derive(Clone)]
+        struct RequestEvent(u32);
+        impl Event for RequestEvent {}
+
+        let counter = Arc::new(Mutex::new(0_u32));
+        let request_history = Arc::new(Mutex::new(Vec::<u32>::new()));
+        let request_history_copy = request_history.clone();
+
+        let mut mediator = DefaultMediator::builder()
+            .add_stream_handler_fn_deferred_with(counter.clone(), |req: CounterRequest, mut mediator, c| {
+                box_stream! { _yx move =>
+                    let mut c = c.lock().unwrap();
+
+                    for _ in 0..req.0 {
+                        *c += 1;
+                    }
+
+                    mediator.publish(RequestEvent(req.0)).unwrap();
+                }
+            })
+            .subscribe_fn(move |event: RequestEvent| {
+                request_history_copy.lock().unwrap().push(event.0);
+            })
+            .build();
+
+        drain_stream!(mediator.stream(CounterRequest(5)).unwrap());
+        drain_stream!(mediator.stream(CounterRequest(3)).unwrap());
+
+        assert_eq!(8, *counter.lock().unwrap());
+
+        let lock = request_history.lock().unwrap();
+        assert_eq!(8, lock.iter().cloned().sum::<u32>());
     }
 }

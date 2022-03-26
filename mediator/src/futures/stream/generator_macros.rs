@@ -102,7 +102,8 @@ mod tests {
                 yx2.yield_one(8);
                 yx2.yield_one(9);
                 yx2.yield_one(10);
-            })).await;
+            }))
+            .await;
         });
 
         for i in 1..=10 {
@@ -119,14 +120,13 @@ mod tests {
 
             yx.yield_all(vec![4, 5, 6]);
 
-            let x = yx.yield_stream(box_stream!(|yx2| {
+            yx.yield_stream(box_stream!(|yx2| {
                 yx2.yield_one(7);
                 yx2.yield_one(8);
                 yx2.yield_one(9);
                 yx2.yield_one(10);
-            }));
-
-            x.await;
+            }))
+            .await;
         });
 
         for i in 1..=10 {
