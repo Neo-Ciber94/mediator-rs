@@ -18,7 +18,9 @@
 //! mediator = "0.1"
 //! ```
 //!
-//! ## Example
+//! ## Examples
+//!
+//! ### Usage
 //! ```rust
 //! use mediator::{DefaultMediator, Mediator, Request, Event, RequestHandler, EventHandler};
 //!
@@ -64,6 +66,61 @@
 //!
 //!     let result = mediator.send(MathRequest(Op::Add(1.0, 2.0))).expect("send failed");
 //!     assert_eq!(result, Some(3.0));
+//! }
+//! ```
+//!
+//! ### Async
+//! ```rust
+//! use mediator::{DefaultAsyncMediator, AsyncMediator, Request};
+//!
+//! struct MulRequest(f32, f32);
+//! impl Request<f32> for MulRequest {}
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     let mut mediator = DefaultAsyncMediator::builder()
+//!         .add_handler(|req: MulRequest| async move {
+//!             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+//!             req.0 * req.1
+//!         })
+//!         .build();
+//!
+//!     let result = mediator.send(MulRequest(2.0, 3.0)).await.expect("send failed");
+//!     assert_eq!(result, 6.0);
+//! }
+//! ```
+//!
+//! ### Streams
+//! Streams require the `streams` feature enable.
+//!
+//! ```rust
+//! use mediator::{StreamRequest, Event, DefaultAsyncMediator, AsyncMediator, box_stream};
+//! use mediator::futures::{StreamExt, BoxStream};
+//!
+//! struct CountdownRequest(u32);
+//! impl StreamRequest for CountdownRequest {
+//!     type Stream = BoxStream<'static, u32>;
+//!     type Item = u32;
+//! }
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     let mut mediator = DefaultAsyncMediator::builder()
+//!         .add_stream_handler_fn(|req: CountdownRequest| box_stream! { yx move =>
+//!             let mut count = req.0;
+//!             while count > 0 {
+//!                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+//!                 yx.yield_one(count);
+//!                 count -= 1;
+//!             }
+//!          })
+//!         .build();
+//!
+//!     let mut stream = mediator.stream(CountdownRequest(3)).expect("stream failed");
+//!     assert_eq!(stream.next().await.unwrap(), 3);
+//!     assert_eq!(stream.next().await.unwrap(), 2);
+//!     assert_eq!(stream.next().await.unwrap(), 1);
+//!     assert_eq!(stream.next().await, None);
 //! }
 //! ```
 
