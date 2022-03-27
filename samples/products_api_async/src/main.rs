@@ -45,7 +45,7 @@ async fn main() -> std::io::Result<()> {
                     .service(endpoints::products::update)
                     .service(endpoints::products::delete)
                     .service(endpoints::products::get)
-                    .service(endpoints::products::get_all),
+                    .service(endpoints::products::get_all)
             )
     })
     .bind(("0.0.0.0", port))?

@@ -1,4 +1,3 @@
-use mediator::futures::StreamExt;
 use redis::aio::Connection;
 use redis::{AsyncCommands, Client, RedisError, RedisResult};
 use serde::de::DeserializeOwned;
@@ -6,6 +5,7 @@ use serde::Serialize;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use mediator::futures::StreamExt;
 
 pub type SharedRedisService<V> = Arc<Mutex<RedisService<V>>>;
 

@@ -7,6 +7,7 @@ edition = "2021"
 mediator = { path="../../mediator", features=["async", "streams"] }
 tokio = { version = "1", features = ["macros"] }
 redis = { version = "0.21.5", features = ["tokio-comp"] }
+async-stream = "0.3.3"
 actix-web = "4"
 env_logger = "0.9.0"
 log = "0.4.14"
