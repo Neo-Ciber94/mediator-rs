@@ -9,6 +9,3 @@ pub use generate_try_stream::*;
 
 mod yielder;
 pub use yielder::*;
-
-mod stream_builder;
-pub use stream_builder::*;
