@@ -15,7 +15,7 @@
 //! ## Usage
 //! ```toml
 //! [dependencies]
-//! mediator = "0.1"
+//! mediator = "0.2"
 //! ```
 //!
 //! ## Examples
