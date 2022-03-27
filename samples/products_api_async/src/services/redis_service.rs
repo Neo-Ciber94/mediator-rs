@@ -30,10 +30,6 @@ where
         }
     }
 
-    async fn connection(&self) -> RedisResult<Connection> {
-        self.client.get_async_connection().await
-    }
-
     pub async fn set<S: AsRef<str>>(&mut self, key: S, value: V) -> Result<(), redis::RedisError> {
         let json = serde_json::to_string(&value).map_err(|e| {
             RedisError::from((
@@ -115,5 +111,10 @@ where
         }
 
         Ok(values)
+    }
+
+    // Get a connection to the Redis server
+    async fn connection(&self) -> RedisResult<Connection> {
+        self.client.get_async_connection().await
     }
 }
