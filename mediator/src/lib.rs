@@ -20,7 +20,7 @@
 //!
 //! ## Examples
 //!
-//! ### Usage
+//! ### Basic usage
 //! ```rust
 //! use mediator::{DefaultMediator, Mediator, Request, Event, RequestHandler, EventHandler};
 //!
@@ -70,6 +70,8 @@
 //! ```
 //!
 //! ### Async
+//! Require the `async` feature enable.
+//!
 //! ```rust
 //! use mediator::{DefaultAsyncMediator, AsyncMediator, Request};
 //!
@@ -91,7 +93,7 @@
 //! ```
 //!
 //! ### Streams
-//! Streams require the `streams` feature enable.
+//! Require the `streams` feature enable.
 //!
 //! ```rust
 //! use mediator::{StreamRequest, Event, DefaultAsyncMediator, AsyncMediator, box_stream};
