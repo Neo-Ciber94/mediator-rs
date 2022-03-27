@@ -11,7 +11,7 @@ pub async fn create(
     mediator: Data<SharedMediator>,
     body: Json<AddProductCommand>,
 ) -> impl Responder {
-    let mut mediator = mediator.try_lock().expect("Unable to lock mediator");
+    let mut mediator = mediator.lock().expect("Unable to lock mediator");
     let result = mediator
         .send(body.into_inner())
         .expect("Unable to send command");
@@ -26,7 +26,7 @@ pub async fn update(
     mediator: Data<SharedMediator>,
     body: Json<UpdateProductCommand>,
 ) -> impl Responder {
-    let mut mediator = mediator.try_lock().expect("Unable to lock mediator");
+    let mut mediator = mediator.lock().expect("Unable to lock mediator");
     let result = mediator
         .send(body.into_inner())
         .expect("Unable to send command");
@@ -40,7 +40,7 @@ pub async fn update(
 #[delete("/{id}/")]
 pub async fn delete(path: web::Path<Uuid>, mediator: Data<SharedMediator>) -> impl Responder {
     let uuid = path.into_inner();
-    let mut mediator = mediator.try_lock().expect("Unable to lock mediator");
+    let mut mediator = mediator.lock().expect("Unable to lock mediator");
     let result = mediator
         .send(DeleteProductCommand(uuid))
         .expect("Unable to send command");
@@ -54,8 +54,7 @@ pub async fn delete(path: web::Path<Uuid>, mediator: Data<SharedMediator>) -> im
 #[get("/{id}/")]
 pub async fn get(path: web::Path<Uuid> ,mediator: Data<SharedMediator>) -> impl Responder {
     let uuid =  path.into_inner();
-    log::info!("Getting product with id: {}", uuid);
-    let mut mediator = mediator.try_lock().expect("Unable to lock mediator");
+    let mut mediator = mediator.lock().expect("Unable to lock mediator");
     let result = mediator
         .send(GetProductRequest(uuid))
         .expect("Unable to send command");
@@ -65,7 +64,7 @@ pub async fn get(path: web::Path<Uuid> ,mediator: Data<SharedMediator>) -> impl 
 
 #[get("/")]
 pub async fn get_all(mediator: Data<SharedMediator>) -> impl Responder {
-    let mut mediator = mediator.try_lock().expect("Unable to lock mediator");
+    let mut mediator = mediator.lock().expect("Unable to lock mediator");
     let result = mediator
         .send(GetAllProductsRequest)
         .expect("Unable to send command");

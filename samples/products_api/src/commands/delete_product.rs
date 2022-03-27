@@ -11,7 +11,7 @@ impl RequestHandler<DeleteProductCommand, Option<Product>> for DeleteProductRequ
     fn handle(&mut self, request: DeleteProductCommand) -> Option<Product> {
         let result = self
             .0
-            .try_lock()
+            .lock()
             .expect("Could not lock the redis service")
             .delete(request.0.to_string())
             .expect("Could not delete the product");

@@ -10,7 +10,7 @@ pub struct GetProductRequestHandler(pub SharedRedisService<Product>);
 impl RequestHandler<GetProductRequest, Option<Product>> for GetProductRequestHandler {
     fn handle(&mut self, req: GetProductRequest) -> Option<Product> {
         self.0
-            .try_lock()
+            .lock()
             .expect("Failed to lock redis service")
             .get(req.0.to_string())
             .expect("Failed to get product from redis")

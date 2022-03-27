@@ -25,7 +25,7 @@ impl RequestHandler<AddProductCommand, Product> for AddProductRequestHandler {
         };
 
         self.0
-            .try_lock()
+            .lock()
             .expect("Could not lock redis service")
             .set(product.id.to_string(), product.clone())
             .expect("Could not set product in redis");

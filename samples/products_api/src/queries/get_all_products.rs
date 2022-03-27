@@ -9,7 +9,7 @@ pub struct GetAllProductsRequestHandler(pub SharedRedisService<Product>);
 impl RequestHandler<GetAllProductsRequest, Vec<Product>> for GetAllProductsRequestHandler {
     fn handle(&mut self, _: GetAllProductsRequest) -> Vec<Product> {
         self.0
-            .try_lock()
+            .lock()
             .expect("Failed to lock redis service")
             .get_all()
             .expect("Failed to get all products")

@@ -16,7 +16,7 @@ impl Request<Option<Product>> for UpdateProductCommand {}
 pub struct UpdateProductRequestHandler(pub SharedRedisService<Product>, pub DefaultMediator);
 impl RequestHandler<UpdateProductCommand, Option<Product>> for UpdateProductRequestHandler {
     fn handle(&mut self, command: UpdateProductCommand) -> Option<Product> {
-        let mut redis = self.0.try_lock().expect("Could not lock the redis service");
+        let mut redis = self.0.lock().expect("Could not lock the redis service");
 
         let id = command.id.to_string();
         let mut product = redis.get(&id).expect("Could not get the product")?;
