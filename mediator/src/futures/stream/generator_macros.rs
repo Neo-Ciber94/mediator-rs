@@ -87,14 +87,18 @@ macro_rules! box_stream {
 #[macro_export]
 macro_rules! try_stream {
     (|$yielder:ident| { $($tt:tt)*}) => {{
+        #[allow(unreachable_code)]
         $crate::futures::stream::generate_try_stream(|$yielder| Box::pin(async move {
-            $($tt)*
+            let _ = { $($tt)* };
+            Ok(())
         }))
     }};
 
     (|$yielder:ident| move { $($tt:tt)*}) => {{
+        #[allow(unreachable_code)]
         $crate::futures::stream::generate_try_stream(move |$yielder| Box::pin(async move {
-            $($tt)*
+            let _ = { $($tt)* };
+            Ok(())
         }))
     }};
 
@@ -110,14 +114,18 @@ macro_rules! try_stream {
 #[macro_export]
 macro_rules! box_try_stream {
     (|$yielder:ident| { $($tt:tt)*}) => {{
+        #[allow(unreachable_code)]
         Box::pin($crate::futures::stream::generate_try_stream(|$yielder| Box::pin(async move {
-            $($tt)*
+            let _ = { $($tt)* };
+            Ok(())
         })))
     } as std::pin::Pin<Box<dyn $crate::futures::Stream<Item = Result<_, _>> + Send + '_>>};
 
     (|$yielder:ident| move { $($tt:tt)*}) => {{
+        #[allow(unreachable_code)]
         Box::pin($crate::futures::stream::generate_try_stream(move |$yielder| Box::pin(async move {
-            $($tt)*
+            let _ = { $($tt)* };
+            Ok(())
         })))
     } as std::pin::Pin<Box<dyn $crate::futures::Stream<Item = Result<_, _>> + Send + '_>>};
 
