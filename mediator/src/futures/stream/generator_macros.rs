@@ -84,6 +84,27 @@ macro_rules! box_stream {
     }};
 }
 
+/// Constructs a `impl Stream<Item=Result<T, E>>` from a generator.
+///
+/// # Example
+/// ```rust
+/// use mediator::try_stream;
+/// use mediator::futures::StreamExt;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let mut stream = try_stream!{ yx move =>
+///         yx.yield_one(1);
+///         yx.yield_one(2);
+///
+///         return Err("Something went wrong");
+///     };
+///
+///     assert_eq!(Some(Ok(1)), stream.next().await);
+///     assert_eq!(Some(Ok(2)), stream.next().await);
+///     assert_eq!(Some(Err("Something went wrong")), stream.next().await);
+/// }
+/// ```
 #[macro_export]
 macro_rules! try_stream {
     (|$yielder:ident| { $($tt:tt)*}) => {{
@@ -111,6 +132,27 @@ macro_rules! try_stream {
     }};
 }
 
+/// Constructs a `Pin<Box<dyn Stream<Item=Result<T, E>> + Send>>` stream from a generator.
+///
+/// # Example
+/// ```rust
+/// use mediator::box_try_stream;
+/// use mediator::futures::StreamExt;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let mut stream = box_try_stream!{ yx move =>
+///         yx.yield_one(1);
+///         yx.yield_one(2);
+///
+///         return Err("Something went wrong");
+///     };
+///
+///     assert_eq!(Some(Ok(1)), stream.next().await);
+///     assert_eq!(Some(Ok(2)), stream.next().await);
+///     assert_eq!(Some(Err("Something went wrong")), stream.next().await);
+/// }
+/// ```
 #[macro_export]
 macro_rules! box_try_stream {
     (|$yielder:ident| { $($tt:tt)*}) => {{

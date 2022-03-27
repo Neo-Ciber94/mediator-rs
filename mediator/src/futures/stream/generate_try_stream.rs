@@ -6,6 +6,9 @@ use std::pin::Pin;
 use std::sync::mpsc::{channel, Receiver};
 use std::task::{Context, Poll};
 
+/// Creates a stream that may return on error using the provided function to generate the values.
+///
+/// This function requires a lot of boilerplate, we recommend to use [`try_stream`] and [`box_try_stream`] macros instead.
 pub fn generate_try_stream<F, B, T, E>(builder: B) -> impl Stream<Item = Result<T, E>>
 where
     B: FnOnce(Yielder<T>) -> F,
