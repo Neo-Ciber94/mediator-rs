@@ -151,6 +151,12 @@ mod streams;
 #[cfg(feature = "streams")]
 pub use streams::*;
 
+#[cfg(feature = "interceptors")]
+mod interceptor;
+
+#[cfg(feature = "interceptors")]
+pub use interceptor::*;
+
 /// Re-exports for futures/stream utilities.
 #[cfg(feature = "async")]
 pub mod futures;

@@ -3,7 +3,7 @@ name = "mediator"
 description = "An implementation of the Mediator pattern in Rust"
 keywords = ["rust-patterns"]
 license = "MIT"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 homepage = "https://crates.io/crates/mediator/"
 repository = "https://github.com/Neo-Ciber94/mediator-rs/"
@@ -15,7 +15,9 @@ tokio = { version = "1.17.0", optional = true, features = ["rt", "rt-multi-threa
 async-trait = { version = "0.1.52", optional = true }
 
 [features]
-impls = []
 default = ["impls"]
+full = ["default", "async", "streams"]
+impls = []
+interceptors = []
 async = ["tokio", "async-trait"]
 streams = ["tokio", "tokio-stream"]
