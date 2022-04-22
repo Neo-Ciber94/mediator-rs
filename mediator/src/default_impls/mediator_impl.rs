@@ -20,7 +20,7 @@ type SharedHandler<H> = Arc<Mutex<HashMap<TypeId, H>>>;
 #[derive(Clone)]
 struct RequestHandlerWrapper {
     #[allow(clippy::type_complexity)]
-    handler: Arc<Mutex<dyn FnMut(Box<dyn Any>) -> Box<dyn Any>>>,
+    handler: Arc<Mutex<dyn FnMut(Box<dyn Any>) -> Box<dyn Any> + Send>>,
     is_deferred: bool,
 }
 
@@ -29,7 +29,7 @@ impl RequestHandlerWrapper {
     where
         Res: 'static,
         Req: Request<Res> + 'static,
-        H: RequestHandler<Req, Res> + 'static,
+        H: RequestHandler<Req, Res> + Send + 'static,
     {
         let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
             let req = *req.downcast::<Req>().unwrap();
@@ -46,7 +46,7 @@ impl RequestHandlerWrapper {
     where
         Res: 'static,
         Req: Request<Res> + 'static,
-        F: FnMut(Req) -> Res + 'static,
+        F: FnMut(Req) -> Res + Send + 'static,
     {
         let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
             let req = *req.downcast::<Req>().unwrap();
@@ -63,7 +63,7 @@ impl RequestHandlerWrapper {
     where
         Res: 'static,
         Req: Request<Res> + 'static,
-        F: FnMut(Req, DefaultMediator) -> Res + 'static,
+        F: FnMut(Req, DefaultMediator) -> Res + Send + 'static,
     {
         let f = move |args: Box<dyn Any>| -> Box<dyn Any> {
             let (req, mediator) = *args.downcast::<(Req, DefaultMediator)>().unwrap();
@@ -97,7 +97,7 @@ impl RequestHandlerWrapper {
 #[derive(Clone)]
 struct EventHandlerWrapper {
     #[allow(clippy::type_complexity)]
-    handler: Arc<Mutex<dyn FnMut(Box<dyn Any>)>>,
+    handler: Arc<Mutex<dyn FnMut(Box<dyn Any>) + Send>>,
     is_deferred: bool,
 }
 
@@ -105,7 +105,7 @@ impl EventHandlerWrapper {
     pub fn new<E, H>(mut handler: H) -> Self
     where
         E: Event + 'static,
-        H: EventHandler<E> + 'static,
+        H: EventHandler<E> + Send + 'static,
     {
         let f = move |event: Box<dyn Any>| {
             let event = *event.downcast::<E>().unwrap();
@@ -121,7 +121,7 @@ impl EventHandlerWrapper {
     pub fn from_fn<E, F>(mut handler: F) -> Self
     where
         E: Event + 'static,
-        F: FnMut(E) + 'static,
+        F: FnMut(E) + Send + 'static,
     {
         let f = move |event: Box<dyn Any>| {
             let event = *event.downcast::<E>().unwrap();
@@ -137,7 +137,7 @@ impl EventHandlerWrapper {
     pub fn from_deferred<E, F>(mut handler: F) -> Self
     where
         E: Event + 'static,
-        F: FnMut(E, DefaultMediator) + 'static,
+        F: FnMut(E, DefaultMediator) + Send + 'static,
     {
         let f = move |args: Box<dyn Any>| {
             let (event, mediator) = *args.downcast::<(E, DefaultMediator)>().unwrap();
@@ -170,7 +170,7 @@ impl EventHandlerWrapper {
 #[cfg(feature = "streams")]
 struct StreamRequestHandlerWrapper {
     #[allow(clippy::type_complexity)]
-    handler: Arc<Mutex<dyn FnMut(Box<dyn Any>) -> Box<dyn Any>>>,
+    handler: Arc<Mutex<dyn FnMut(Box<dyn Any>) -> Box<dyn Any> + Send>>,
     is_deferred: bool,
 }
 
@@ -179,7 +179,7 @@ impl StreamRequestHandlerWrapper {
     pub fn new<Req, S, T, H>(mut handler: H) -> Self
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,
-        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + 'static,
+        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + Send + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
@@ -198,7 +198,7 @@ impl StreamRequestHandlerWrapper {
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
-        F: FnMut(Req) -> S + 'static,
+        F: FnMut(Req) -> S + Send + 'static,
         T: 'static,
     {
         let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
@@ -217,7 +217,7 @@ impl StreamRequestHandlerWrapper {
         State: Send + Clone + 'static,
         Req: StreamRequest<Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
-        F: FnMut(Req, State) -> S + 'static,
+        F: FnMut(Req, State) -> S + Send + 'static,
         T: 'static,
     {
         let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
@@ -235,7 +235,7 @@ impl StreamRequestHandlerWrapper {
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
-        F: FnMut(Req, DefaultMediator) -> S + 'static,
+        F: FnMut(Req, DefaultMediator) -> S + Send + 'static,
         T: 'static,
     {
         let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
@@ -254,7 +254,7 @@ impl StreamRequestHandlerWrapper {
         State: Send + Clone + 'static,
         Req: StreamRequest<Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
-        F: FnMut(Req, DefaultMediator, State) -> S + 'static,
+        F: FnMut(Req, DefaultMediator, State) -> S + Send + 'static,
         T: 'static,
     {
         let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
@@ -291,10 +291,10 @@ type NextCallback = Box<dyn Any>;
 #[cfg(feature = "interceptors")]
 #[derive(Clone)]
 enum InterceptorWrapper {
-    Handler(Arc<Mutex<dyn FnMut(Box<dyn Any>, NextCallback) -> Box<dyn Any>>>),
+    Handler(Arc<Mutex<dyn FnMut(Box<dyn Any>, NextCallback) -> Box<dyn Any> + Send>>),
 
     #[cfg(feature = "streams")]
-    Stream(Arc<Mutex<dyn FnMut(Box<dyn Any>, NextCallback) -> Box<dyn Any>>>)
+    Stream(Arc<Mutex<dyn FnMut(Box<dyn Any>, NextCallback) -> Box<dyn Any> + Send>>)
 }
 
 #[cfg(feature = "interceptors")]
@@ -303,7 +303,7 @@ impl InterceptorWrapper {
         where
             Res: 'static,
             Req: 'static,
-            H: Interceptor<Req, Res> + 'static,
+            H: Interceptor<Req, Res> + Send + 'static,
     {
         let f = move |req: Box<dyn Any>, next: NextCallback| -> Box<dyn Any> {
             let req = *req.downcast::<Req>().unwrap();
@@ -320,7 +320,7 @@ impl InterceptorWrapper {
         where
             Req: 'static,
             Res: 'static,
-            F: FnMut(Req, Box<dyn FnOnce(Req) -> Res>) -> Res + 'static,
+            F: FnMut(Req, Box<dyn FnOnce(Req) -> Res>) -> Res + Send + 'static,
     {
         let f = move |req: Box<dyn Any>, next: NextCallback| -> Box<dyn Any> {
             let req = *req.downcast::<Req>().unwrap();
@@ -336,10 +336,9 @@ impl InterceptorWrapper {
     pub fn from_stream<Req, T, S, H>(mut h: H) -> Self
         where
             Req: StreamRequest<Stream = S, Item = T> + 'static,
-            H: StreamInterceptor<Request = Req, Stream = S, Item = T> + 'static,
+            H: StreamInterceptor<Request = Req, Stream = S, Item = T> + Send + 'static,
             S: Stream<Item = T> + 'static,
             T: 'static,
-
     {
         let f = move |req: Box<dyn Any>, next: NextCallback| -> Box<dyn Any> {
             let req = *req.downcast::<Req>().unwrap();
@@ -355,7 +354,7 @@ impl InterceptorWrapper {
     pub fn from_stream_fn<Req, T, S, F>(mut f: F) -> Self
         where
             Req: StreamRequest<Stream = S, Item = T> + 'static,
-            F: FnMut(Req, Box<dyn FnOnce(Req) -> S>) -> S + 'static,
+            F: FnMut(Req, Box<dyn FnOnce(Req) -> S>) -> S + Send + 'static,
             S: Stream<Item = T> + 'static,
             T: 'static {
         let f = move |req: Box<dyn Any>, next: NextCallback| -> Box<dyn Any> {
@@ -491,12 +490,6 @@ pub struct DefaultMediator {
     #[cfg(feature = "streams")]
     stream_handlers: SharedHandler<StreamRequestHandlerWrapper>,
 }
-
-// SAFETY: the `request_handlers` and `event_handlers` are wrapped in Arc and Mutex.
-//unsafe impl Send for DefaultMediator {}
-
-// SAFETY: the `request_handlers` and `event_handlers` are wrapped in Arc and Mutex.
-//unsafe impl Sync for DefaultMediator {}
 
 impl DefaultMediator {
     /// Gets a [DefaultMediator] builder.
@@ -684,7 +677,7 @@ impl Builder {
     where
         Res: 'static,
         Req: Request<Res> + 'static,
-        H: RequestHandler<Req, Res> + 'static,
+        H: RequestHandler<Req, Res> + Send + 'static,
     {
         let mut handlers_lock = self.inner.request_handlers.lock().unwrap();
         handlers_lock.insert(TypeId::of::<Req>(), RequestHandlerWrapper::new(handler));
@@ -697,7 +690,7 @@ impl Builder {
     where
         Res: 'static,
         Req: Request<Res> + 'static,
-        F: FnMut(Req) -> Res + 'static,
+        F: FnMut(Req) -> Res + Send + 'static,
     {
         let mut handlers_lock = self.inner.request_handlers.lock().unwrap();
         handlers_lock.insert(TypeId::of::<Req>(), RequestHandlerWrapper::from_fn(handler));
@@ -710,8 +703,8 @@ impl Builder {
     where
         Res: 'static,
         Req: Request<Res> + 'static,
-        H: RequestHandler<Req, Res> + 'static,
-        F: Fn(DefaultMediator) -> H,
+        H: RequestHandler<Req, Res> + Send + 'static,
+        F: Fn(DefaultMediator) -> H + Send,
     {
         let handler = f(self.inner.clone());
         self.add_handler(handler)
@@ -722,7 +715,7 @@ impl Builder {
     where
         Res: 'static,
         Req: Request<Res> + 'static,
-        F: FnMut(Req, DefaultMediator) -> Res + 'static,
+        F: FnMut(Req, DefaultMediator) -> Res + Send + 'static,
     {
         let mut handlers_lock = self.inner.request_handlers.lock().unwrap();
         handlers_lock.insert(TypeId::of::<Req>(), RequestHandlerWrapper::from_deferred(f));
@@ -734,7 +727,7 @@ impl Builder {
     pub fn subscribe<E, H>(self, handler: H) -> Self
     where
         E: Event + 'static,
-        H: EventHandler<E> + 'static,
+        H: EventHandler<E> + Send + 'static,
     {
         let mut handlers_lock = self.inner.event_handlers.lock().unwrap();
         let event_handlers = handlers_lock
@@ -749,7 +742,7 @@ impl Builder {
     pub fn subscribe_fn<E, F>(self, handler: F) -> Self
     where
         E: Event + 'static,
-        F: FnMut(E) + 'static,
+        F: FnMut(E) + Send + 'static,
     {
         let mut handlers_lock = self.inner.event_handlers.lock().unwrap();
         let event_handlers = handlers_lock
@@ -764,8 +757,8 @@ impl Builder {
     pub fn subscribe_deferred<E, H, F>(self, f: F) -> Self
     where
         E: Event + 'static,
-        H: EventHandler<E> + 'static,
-        F: Fn(DefaultMediator) -> H,
+        H: EventHandler<E> + Send + 'static,
+        F: Fn(DefaultMediator) -> H + Send,
     {
         let handler = f(self.inner.clone());
         self.subscribe(handler)
@@ -775,7 +768,7 @@ impl Builder {
     pub fn subscribe_fn_deferred<E, H, F>(self, f: F) -> Self
     where
         E: Event + 'static,
-        F: FnMut(E, DefaultMediator) + 'static,
+        F: FnMut(E, DefaultMediator) + Send + 'static,
     {
         let mut handlers_lock = self.inner.event_handlers.lock().unwrap();
         let event_handlers = handlers_lock
@@ -791,7 +784,7 @@ impl Builder {
     pub fn add_stream_handler<Req, S, T, H>(self, handler: H) -> Self
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,
-        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + 'static,
+        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + Send + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
@@ -809,7 +802,7 @@ impl Builder {
     pub fn add_stream_handler_fn<Req, S, T, F>(self, f: F) -> Self
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,
-        F: FnMut(Req) -> S + 'static,
+        F: FnMut(Req) -> S + Send + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
@@ -824,7 +817,7 @@ impl Builder {
     where
         State: Send + Clone + 'static,
         Req: StreamRequest<Stream = S, Item = T> + 'static,
-        F: FnMut(Req, State) -> S + 'static,
+        F: FnMut(Req, State) -> S + Send + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
@@ -842,7 +835,7 @@ impl Builder {
     pub fn add_stream_handler_deferred<Req, S, T, H, F>(self, f: F) -> Self
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,
-        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + 'static,
+        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + Send + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
         F: Fn(DefaultMediator) -> H,
@@ -856,7 +849,7 @@ impl Builder {
     pub fn add_stream_handler_fn_deferred<Req, S, T, F>(self, f: F) -> Self
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,
-        F: FnMut(Req, DefaultMediator) -> S + 'static,
+        F: FnMut(Req, DefaultMediator) -> S + Send + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
@@ -879,7 +872,7 @@ impl Builder {
     where
         State: Send + Clone + 'static,
         Req: StreamRequest<Stream = S, Item = T> + 'static,
-        F: FnMut(Req, DefaultMediator, State) -> S + 'static,
+        F: FnMut(Req, DefaultMediator, State) -> S + Send + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
@@ -904,7 +897,7 @@ impl Builder {
     where
         Req: 'static,
         Res: 'static,
-        H: Interceptor<Req, Res> + 'static,
+        H: Interceptor<Req, Res> + Send + 'static,
     {
         let req_ty = TypeId::of::<Req>();
         let res_ty = TypeId::of::<Res>();
@@ -922,7 +915,7 @@ impl Builder {
     where
         Req: 'static,
         Res: 'static,
-        F: FnMut(Req, Box<dyn FnOnce(Req) -> Res>) -> Res + 'static,
+        F: FnMut(Req, Box<dyn FnOnce(Req) -> Res>) -> Res + Send + 'static,
     {
         let req_ty = TypeId::of::<Req>();
         let res_ty = TypeId::of::<Res>();
@@ -939,7 +932,7 @@ impl Builder {
     where Req: StreamRequest<Stream = S, Item = T> + 'static,
           S: Stream<Item = T> + 'static,
           T: 'static,
-          H: StreamInterceptor<Request = Req, Stream = S, Item = T> + 'static,
+          H: StreamInterceptor<Request = Req, Stream = S, Item = T> + Send + 'static,
     {
         let key = InterceptorKey::of::<Req, S>();
 
@@ -955,7 +948,7 @@ impl Builder {
     where Req: StreamRequest<Stream = S, Item = T> + 'static,
           S: Stream<Item = T> + 'static,
           T: 'static,
-          F: FnMut(Req, Box<dyn FnOnce(Req) -> S>) -> S + 'static,
+          F: FnMut(Req, Box<dyn FnOnce(Req) -> S>) -> S + Send + 'static,
     {
         let key = InterceptorKey::of::<Req, S>();
         let mut handlers_lock = self.inner.interceptors.lock().unwrap();
@@ -971,6 +964,20 @@ impl Default for Builder {
         Builder::new()
     }
 }
+
+/// Assert the `DefaultMediator` is `Send + Sync`.
+/// ```rust
+/// use mediator::DefaultMediator;
+///
+/// fn assert_send_sync<T: Send + Sync>(t: T) {
+///     drop(t);
+/// }
+///
+/// let mediator = DefaultMediator::builder().build();
+/// assert_send_sync(mediator);
+/// ```
+#[cfg(test)]
+fn _dummy(){}
 
 #[cfg(test)]
 mod tests {
