@@ -10,7 +10,7 @@ use crate::Interceptor;
 #[cfg(feature = "streams")]
 use {
     crate::{StreamRequest, StreamRequestHandler},
-    tokio_stream::Stream,
+    crate::futures::Stream,
 };
 
 type SharedHandler<H> = Arc<Mutex<HashMap<TypeId, H>>>;
@@ -289,6 +289,23 @@ impl StreamRequestHandlerWrapper {
 type NextCallback = Box<dyn Any>;
 
 #[cfg(feature = "interceptors")]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+struct InterceptorKey {
+    req_ty: TypeId,
+    res_ty: TypeId,
+}
+
+#[cfg(feature = "interceptors")]
+impl InterceptorKey {
+    pub fn of<Req: 'static, Res: 'static>() -> Self {
+        InterceptorKey {
+            req_ty: TypeId::of::<Req>(),
+            res_ty: TypeId::of::<Res>(),
+        }
+    }
+}
+
+#[cfg(feature = "interceptors")]
 #[derive(Clone)]
 enum InterceptorWrapper {
     Handler(Arc<Mutex<dyn FnMut(Box<dyn Any>, NextCallback) -> Box<dyn Any> + Send>>),
@@ -398,23 +415,6 @@ impl InterceptorWrapper {
             res.downcast::<S>().map(|res| *res).ok()
         } else {
             None
-        }
-    }
-}
-
-#[cfg(feature = "interceptors")]
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-struct InterceptorKey {
-    req_ty: TypeId,
-    res_ty: TypeId,
-}
-
-#[cfg(feature = "interceptors")]
-impl InterceptorKey {
-    pub fn of<Req: 'static, Res: 'static>() -> Self {
-        InterceptorKey {
-            req_ty: TypeId::of::<Req>(),
-            res_ty: TypeId::of::<Res>(),
         }
     }
 }
@@ -885,19 +885,13 @@ impl Builder {
         self
     }
 
-    /// Builds the `DefaultMediator`.
-    pub fn build(self) -> DefaultMediator {
-        self.inner
-    }
-
-    // Interceptors
-
+    /// Adds a request interceptor.
     #[cfg(feature = "interceptors")]
     pub fn add_interceptor<Req, Res, H>(self, handler: H) -> Self
-    where
-        Req: 'static,
-        Res: 'static,
-        H: Interceptor<Req, Res> + Send + 'static,
+        where
+            Req: 'static,
+            Res: 'static,
+            H: Interceptor<Req, Res> + Send + 'static,
     {
         let req_ty = TypeId::of::<Req>();
         let res_ty = TypeId::of::<Res>();
@@ -910,12 +904,13 @@ impl Builder {
         self
     }
 
+    /// Adds a request interceptor from a function.
     #[cfg(feature = "interceptors")]
     pub fn add_interceptor_fn<Req, Res, F>(self, f: F) -> Self
-    where
-        Req: 'static,
-        Res: 'static,
-        F: FnMut(Req, Box<dyn FnOnce(Req) -> Res>) -> Res + Send + 'static,
+        where
+            Req: 'static,
+            Res: 'static,
+            F: FnMut(Req, Box<dyn FnOnce(Req) -> Res>) -> Res + Send + 'static,
     {
         let req_ty = TypeId::of::<Req>();
         let res_ty = TypeId::of::<Res>();
@@ -927,12 +922,13 @@ impl Builder {
         self
     }
 
+    /// Adds a stream request interceptor.
     #[cfg(feature = "streams")]
     pub fn add_interceptor_stream<Req, T, S, H>(self, handler: H) -> Self
-    where Req: StreamRequest<Stream = S, Item = T> + 'static,
-          S: Stream<Item = T> + 'static,
-          T: 'static,
-          H: StreamInterceptor<Request = Req, Stream = S, Item = T> + Send + 'static,
+        where Req: StreamRequest<Stream = S, Item = T> + 'static,
+              S: Stream<Item = T> + 'static,
+              T: 'static,
+              H: StreamInterceptor<Request = Req, Stream = S, Item = T> + Send + 'static,
     {
         let key = InterceptorKey::of::<Req, S>();
 
@@ -943,12 +939,13 @@ impl Builder {
         self
     }
 
+    /// Adds a stream request interceptor from a function.
     #[cfg(feature = "streams")]
     pub fn add_interceptor_stream_fn<Req, T, S, F>(self, f: F) -> Self
-    where Req: StreamRequest<Stream = S, Item = T> + 'static,
-          S: Stream<Item = T> + 'static,
-          T: 'static,
-          F: FnMut(Req, Box<dyn FnOnce(Req) -> S>) -> S + Send + 'static,
+        where Req: StreamRequest<Stream = S, Item = T> + 'static,
+              S: Stream<Item = T> + 'static,
+              T: 'static,
+              F: FnMut(Req, Box<dyn FnOnce(Req) -> S>) -> S + Send + 'static,
     {
         let key = InterceptorKey::of::<Req, S>();
         let mut handlers_lock = self.inner.interceptors.lock().unwrap();
@@ -956,6 +953,11 @@ impl Builder {
         interceptors.push(InterceptorWrapper::from_stream_fn(f));
         drop(handlers_lock);
         self
+    }
+
+    /// Builds the `DefaultMediator`.
+    pub fn build(self) -> DefaultMediator {
+        self.inner
     }
 }
 
@@ -977,7 +979,10 @@ impl Default for Builder {
 /// assert_send_sync(mediator);
 /// ```
 #[cfg(test)]
-fn _dummy(){}
+fn _dummy(){
+    fn assert_send_sync<T: Send + Sync>(t: T) {}
+    assert_send_sync(DefaultMediator::builder().build());
+}
 
 #[cfg(test)]
 mod tests {

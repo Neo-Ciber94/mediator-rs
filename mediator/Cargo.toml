@@ -16,7 +16,7 @@ async-trait = { version = "0.1.52", optional = true }
 
 [features]
 default = ["impls"]
-full = ["default", "async", "streams"]
+full = ["default", "async", "streams", "interceptors"]
 impls = []
 interceptors = []
 async = ["tokio", "async-trait"]
