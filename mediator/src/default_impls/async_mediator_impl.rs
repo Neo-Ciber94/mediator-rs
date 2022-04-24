@@ -1,21 +1,29 @@
+#![allow(irrefutable_let_patterns)]
+
 use crate::error::{Error, ErrorKind};
 use crate::{
-    AsyncEventHandler, AsyncMediator, AsyncRequestHandler, Event, Request, StreamRequestHandler,
+    AsyncEventHandler, AsyncMediator, AsyncRequestHandler, Event, Request,
 };
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+#[cfg(feature = "async")]
 use tokio::sync::Mutex as AsyncMutex;
 
 #[cfg(feature = "interceptors")]
 use crate::AsyncInterceptor;
 
+#[cfg(all(feature = "interceptors", feature = "streams"))]
+use crate::AsyncStreamInterceptor;
+
 #[cfg(feature = "streams")]
 use {
+    std::sync::Mutex,
     crate::futures::Stream,
-    crate::{AsyncStreamInterceptor, StreamRequest},
+    crate::{StreamRequestHandler, StreamRequest},
 };
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -491,7 +499,11 @@ impl StreamRequestHandlerWrapper {
 
 #[cfg(feature = "interceptors")]
 type NextCallback = Box<dyn Any + Send>;
+
+#[cfg(feature = "interceptors")]
 type NextCallbackFut<Req, Res> = Box<dyn FnOnce(Req) -> BoxFuture<'static, Res> + Send>;
+
+#[cfg(feature = "interceptors")]
 type BoxAnySendFuture = BoxFuture<'static, Box<dyn Any + Send>>;
 
 #[cfg(feature = "interceptors")]
@@ -1320,7 +1332,7 @@ impl Builder {
     }
 
     /// Adds a stream request interceptor.
-    #[cfg(feature = "streams")]
+    #[cfg(all(feature = "streams", feature = "interceptors"))]
     pub fn add_interceptor_stream<Req, T, S, H>(self, handler: H) -> Self
     where
         Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
@@ -1344,7 +1356,7 @@ impl Builder {
     }
 
     /// Adds a stream request interceptor from a function.
-    #[cfg(feature = "streams")]
+    #[cfg(all(feature = "streams", feature = "interceptors"))]
     pub fn add_interceptor_stream_fn<Req, T, S, H>(self, handler: H) -> Self
     where
         Req: StreamRequest<Stream = S, Item = T> + Send + 'static,

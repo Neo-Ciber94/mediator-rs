@@ -1,5 +1,7 @@
+#![allow(irrefutable_let_patterns)]
+
 use crate::error::{Error, ErrorKind};
-use crate::{Event, EventHandler, Mediator, Request, RequestHandler, StreamInterceptor};
+use crate::{Event, EventHandler, Mediator, Request, RequestHandler};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -10,8 +12,11 @@ use crate::Interceptor;
 #[cfg(feature = "streams")]
 use {
     crate::futures::Stream,
-    crate::{StreamRequest, StreamRequestHandler},
+    crate::{StreamRequest, StreamRequestHandler}
 };
+
+#[cfg(all(feature = "interceptors", feature = "streams"))]
+use crate::StreamInterceptor;
 
 type SharedHandler<H> = Arc<Mutex<HashMap<TypeId, H>>>;
 
@@ -916,7 +921,7 @@ impl Builder {
     }
 
     /// Adds a stream request interceptor.
-    #[cfg(feature = "streams")]
+    #[cfg(all(feature = "streams", feature = "interceptors"))]
     pub fn add_interceptor_stream<Req, T, S, H>(self, handler: H) -> Self
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,
@@ -934,7 +939,7 @@ impl Builder {
     }
 
     /// Adds a stream request interceptor from a function.
-    #[cfg(feature = "streams")]
+    #[cfg(all(feature = "streams", feature = "interceptors"))]
     pub fn add_interceptor_stream_fn<Req, T, S, F>(self, f: F) -> Self
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,

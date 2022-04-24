@@ -1,4 +1,5 @@
 /// A boxed stream.
+#[cfg(feature = "streams")]
 pub type BoxStream<'a, T> = std::pin::Pin<Box<dyn crate::futures::Stream<Item = T> + Send + 'a>>;
 
 /// A boxed future.
