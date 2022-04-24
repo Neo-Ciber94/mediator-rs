@@ -8,7 +8,7 @@ mod queries;
 mod services;
 
 use crate::models::product::Product;
-use crate::services::redis_service::{RedisService, SharedRedisService};
+use crate::services::redis_service::RedisService;
 use actix_web::middleware::TrailingSlash;
 use actix_web::web::Data;
 use actix_web::{middleware, web, App, HttpServer};
@@ -16,8 +16,9 @@ use mediator::DefaultMediator;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
+use tokio::sync::Mutex as TokioMutex;
 
-pub type SharedMediator = Arc<Mutex<DefaultMediator>>;
+pub type SharedRedisService<V> = Arc<Mutex<RedisService<V>>>;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -36,7 +37,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(middleware::NormalizePath::new(TrailingSlash::Always))
             .wrap(middleware::Logger::default())
-            .app_data(Data::new(mediator.clone()))
+            .app_data(Data::new(TokioMutex::new(mediator.clone())))
             .app_data(Data::new(redis_service.clone()))
             .service(
                 web::scope("/api/products")
@@ -58,7 +59,7 @@ async fn on_server_start() {
     log::info!("Sync server started");
 }
 
-fn create_mediator_service(redis: &SharedRedisService<Product>) -> SharedMediator {
+fn create_mediator_service(redis: &SharedRedisService<Product>) -> DefaultMediator {
     use commands::*;
     use events::*;
     use queries::*;
@@ -83,7 +84,7 @@ fn create_mediator_service(redis: &SharedRedisService<Product>) -> SharedMediato
         })
         .build();
 
-    Arc::new(Mutex::new(mediator))
+    mediator
 }
 
 fn create_redis_service<V>(base_key: &str) -> SharedRedisService<V>

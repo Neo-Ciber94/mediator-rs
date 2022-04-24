@@ -8,17 +8,18 @@ mod queries;
 mod services;
 
 use crate::models::product::Product;
-use crate::services::redis_service::{RedisService, SharedRedisService};
+use crate::services::redis_service::RedisService;
 use actix_web::middleware::TrailingSlash;
 use actix_web::web::Data;
 use actix_web::{middleware, web, App, HttpServer};
 use mediator::DefaultAsyncMediator;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use tokio::sync::Mutex;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 pub type SharedMediator = Arc<Mutex<DefaultAsyncMediator>>;
+pub type SharedRedisService<V> = Arc<Mutex<RedisService<V>>>;
 
 #[tokio::main(worker_threads = 4)]
 async fn main() -> std::io::Result<()> {
@@ -37,7 +38,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(middleware::NormalizePath::new(TrailingSlash::Always))
             .wrap(middleware::Logger::default())
-            .app_data(Data::new(mediator.clone()))
+            .app_data(Data::new(Mutex::new(mediator.clone())))
             .app_data(Data::new(redis_service.clone()))
             .service(
                 web::scope("/api/products")
@@ -45,7 +46,7 @@ async fn main() -> std::io::Result<()> {
                     .service(endpoints::products::update)
                     .service(endpoints::products::delete)
                     .service(endpoints::products::get)
-                    .service(endpoints::products::get_all)
+                    .service(endpoints::products::get_all),
             )
     })
     .bind(("0.0.0.0", port))?
@@ -59,7 +60,7 @@ async fn on_server_start() {
     log::info!("Async server started");
 }
 
-fn create_mediator_service(redis: &SharedRedisService<Product>) -> SharedMediator {
+fn create_mediator_service(redis: &SharedRedisService<Product>) -> DefaultAsyncMediator {
     use commands::*;
     use events::*;
     use queries::*;
@@ -84,7 +85,7 @@ fn create_mediator_service(redis: &SharedRedisService<Product>) -> SharedMediato
         })
         .build();
 
-    Arc::new(Mutex::new(mediator))
+    mediator
 }
 
 fn create_redis_service<V>(base_key: &str) -> SharedRedisService<V>

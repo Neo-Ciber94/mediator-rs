@@ -1,5 +1,5 @@
 use crate::models::product::Product;
-use crate::services::redis_service::SharedRedisService;
+use crate::SharedRedisService;
 use mediator::{AsyncRequestHandler, Request};
 
 pub struct GetAllProductsRequest;

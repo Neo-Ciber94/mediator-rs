@@ -1,6 +1,6 @@
 use crate::events::ProductAddedEvent;
 use crate::models::product::Product;
-use crate::services::redis_service::SharedRedisService;
+use crate::SharedRedisService;
 use mediator::{AsyncMediator, AsyncRequestHandler, DefaultAsyncMediator, Request};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

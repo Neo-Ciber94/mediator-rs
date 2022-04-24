@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-mediator = { path="../../mediator" }
+mediator = { path="../../mediator", features=["full"] }
 tokio = { version = "1", features = ["macros"] }
 redis = { version = "0.21.5" }
 actix-web = "4"

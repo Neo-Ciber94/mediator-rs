@@ -2,8 +2,6 @@ use redis::{Client, Commands, RedisError};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
-pub type SharedRedisService<V> = Arc<Mutex<RedisService<V>>>;
 
 #[derive(Debug, Clone)]
 pub struct RedisService<V> {
