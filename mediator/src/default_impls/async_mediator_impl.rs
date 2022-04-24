@@ -38,7 +38,7 @@ impl RequestHandlerWrapper {
     where
         Res: 'static,
         Req: Request<Res> + Send + 'static,
-        H: AsyncRequestHandler<Req, Res> + Sync + Send + 'static,
+        H: AsyncRequestHandler<Req, Res> + Send + 'static,
     {
         let handler = Arc::new(AsyncMutex::new(handler));
 
@@ -370,7 +370,7 @@ impl EventHandlerWrapper {
 #[cfg(feature = "streams")]
 struct StreamRequestHandlerWrapper {
     #[allow(clippy::type_complexity)]
-    handler: Arc<Mutex<dyn FnMut(Box<dyn Any>) -> Box<dyn Any> + Send + Sync>>,
+    handler: Arc<Mutex<dyn FnMut(Box<dyn Any>) -> Box<dyn Any> + Send>>,
     is_deferred: bool,
 }
 
@@ -379,7 +379,7 @@ impl StreamRequestHandlerWrapper {
     pub fn new<Req, S, T, H>(mut handler: H) -> Self
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,
-        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + Sync + Send + 'static,
+        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + Send + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
@@ -398,7 +398,7 @@ impl StreamRequestHandlerWrapper {
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
-        F: FnMut(Req) -> S + Send + Sync + 'static,
+        F: FnMut(Req) -> S + Send + 'static,
         T: 'static,
     {
         let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
@@ -417,7 +417,7 @@ impl StreamRequestHandlerWrapper {
         State: Sync + Send + Clone + 'static,
         Req: StreamRequest<Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
-        F: FnMut(Req, State) -> S + Send + Sync + 'static,
+        F: FnMut(Req, State) -> S + Send + 'static,
         T: 'static,
     {
         let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
@@ -435,7 +435,7 @@ impl StreamRequestHandlerWrapper {
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
-        F: FnMut(Req, DefaultAsyncMediator) -> S + Send + Sync + 'static,
+        F: FnMut(Req, DefaultAsyncMediator) -> S + Send + 'static,
         T: 'static,
     {
         let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
@@ -454,7 +454,7 @@ impl StreamRequestHandlerWrapper {
         State: Sync + Send + Clone + 'static,
         Req: StreamRequest<Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
-        F: FnMut(Req, DefaultAsyncMediator, State) -> S + Send + Sync + 'static,
+        F: FnMut(Req, DefaultAsyncMediator, State) -> S + Send + 'static,
         T: 'static,
     {
         let f = move |req: Box<dyn Any>| -> Box<dyn Any> {
@@ -491,8 +491,8 @@ impl StreamRequestHandlerWrapper {
 
 #[cfg(feature = "interceptors")]
 type NextCallback = Box<dyn Any + Send>;
+type NextCallbackFut<Req, Res> = Box<dyn FnOnce(Req) -> BoxFuture<'static, Res> + Send>;
 type BoxAnySendFuture = BoxFuture<'static, Box<dyn Any + Send>>;
-type BoxFnOnceFuture<Req, Res> = Box<dyn FnOnce(Req) -> BoxFuture<'static, Res> + Send>;
 
 #[cfg(feature = "interceptors")]
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -558,7 +558,7 @@ impl InterceptorWrapper {
     where
         Req: Send + 'static,
         Res: Send + 'static,
-        H: FnMut(Req, BoxFnOnceFuture<Req, Res>) -> BoxFuture<'static, Res> + Send + 'static,
+        H: FnMut(Req, NextCallbackFut<Req, Res>) -> BoxFuture<'static, Res> + Send + 'static,
     {
         let handler = Arc::new(AsyncMutex::new(handler));
 
@@ -614,7 +614,7 @@ impl InterceptorWrapper {
     pub fn from_stream_fn<Req, T, S, H>(handler: H) -> Self
     where
         Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
-        H: FnMut(Req, BoxFnOnceFuture<Req, S>) -> BoxFuture<'static, S> + Send + 'static,
+        H: FnMut(Req, NextCallbackFut<Req, S>) -> BoxFuture<'static, S> + Send + 'static,
         S: Stream<Item = T> + Send + 'static,
         T: Send + 'static,
     {
@@ -897,7 +897,7 @@ impl Builder {
     where
         Req: Request<Res> + Send + 'static,
         Res: Send + 'static,
-        H: AsyncRequestHandler<Req, Res> + Sync + Send + 'static,
+        H: AsyncRequestHandler<Req, Res> + Send + 'static,
     {
         let mediator = self.inner.clone();
 
@@ -932,13 +932,13 @@ impl Builder {
         self
     }
 
-    pub fn add_handler_fn_with<State, Req, Res, H, F>(self, state: State, handler: H) -> Self
+    pub fn add_handler_fn_with<State, Req, Res, H, Fut>(self, state: State, handler: H) -> Self
     where
         State: Send + Clone + 'static,
         Res: Send + 'static,
         Req: Request<Res> + Send + 'static,
-        F: Future<Output = Res> + Send + 'static,
-        H: FnMut(Req, State) -> F + Send + 'static,
+        Fut: Future<Output = Res> + Send + 'static,
+        H: FnMut(Req, State) -> Fut + Send + 'static,
     {
         let mediator = self.inner.clone();
 
@@ -958,7 +958,7 @@ impl Builder {
     where
         Req: Request<Res> + Send + 'static,
         Res: Send + 'static,
-        H: AsyncRequestHandler<Req, Res> + Sync + Send + 'static,
+        H: AsyncRequestHandler<Req, Res> + Send + 'static,
         F: Fn(DefaultAsyncMediator) -> H,
     {
         let handler = f(self.inner.clone());
@@ -966,12 +966,12 @@ impl Builder {
     }
 
     /// Registers a request handler from a function using a copy of the mediator.
-    pub fn add_handler_fn_deferred<Req, Res, U, H, F>(self, f: H) -> Self
+    pub fn add_handler_fn_deferred<Req, Res, U, H, Fut>(self, f: H) -> Self
     where
         Res: Send + 'static,
         Req: Request<Res> + Send + 'static,
-        F: Future<Output = Res> + Send + 'static,
-        H: FnMut(Req, DefaultAsyncMediator) -> F + Send + 'static,
+        Fut: Future<Output = Res> + Send + 'static,
+        H: FnMut(Req, DefaultAsyncMediator) -> Fut + Send + 'static,
     {
         let mediator = self.inner.clone();
 
@@ -987,13 +987,17 @@ impl Builder {
     }
 
     /// TODO
-    pub fn add_handler_fn_deferred_with<State, Req, Res, U, H, F>(self, state: State, f: H) -> Self
+    pub fn add_handler_fn_deferred_with<State, Req, Res, U, H, Fut>(
+        self,
+        state: State,
+        f: H,
+    ) -> Self
     where
         State: Send + Clone + 'static,
         Res: Send + 'static,
         Req: Request<Res> + Send + 'static,
-        F: Future<Output = Res> + Send + 'static,
-        H: FnMut(Req, DefaultAsyncMediator, State) -> F + Send + 'static,
+        Fut: Future<Output = Res> + Send + 'static,
+        H: FnMut(Req, DefaultAsyncMediator, State) -> Fut + Send + 'static,
     {
         let mediator = self.inner.clone();
 
@@ -1049,12 +1053,12 @@ impl Builder {
         self
     }
 
-    pub fn subscribe_fn_with<S, E, H, F>(self, state: S, handler: H) -> Self
+    pub fn subscribe_fn_with<S, E, H, Fut>(self, state: S, handler: H) -> Self
     where
         S: Send + Clone + 'static,
         E: Event + Send + 'static,
-        F: Future<Output = ()> + Send + 'static,
-        H: FnMut(E, S) -> F + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+        H: FnMut(E, S) -> Fut + Send + 'static,
     {
         let mediator = self.inner.clone();
 
@@ -1082,11 +1086,11 @@ impl Builder {
     }
 
     /// Registers an event handler from a function using a copy of the mediator.
-    pub fn subscribe_fn_deferred<E, H, U, F>(self, f: H) -> Self
+    pub fn subscribe_fn_deferred<E, H, U, Fut>(self, f: H) -> Self
     where
         E: Event + Send + 'static,
-        F: Future<Output = ()> + Send + 'static,
-        H: FnMut(E, DefaultAsyncMediator) -> F + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+        H: FnMut(E, DefaultAsyncMediator) -> Fut + Send + 'static,
     {
         let mediator = self.inner.clone();
 
@@ -1102,12 +1106,12 @@ impl Builder {
         self
     }
 
-    pub fn subscribe_fn_deferred_with<State, E, H, U, F>(self, state: State, f: H) -> Self
+    pub fn subscribe_fn_deferred_with<State, E, H, U, Fut>(self, state: State, f: H) -> Self
     where
         State: Sync + Send + Clone + 'static,
         E: Event + Send + 'static,
-        F: Future<Output = ()> + Send + 'static,
-        H: FnMut(E, DefaultAsyncMediator, State) -> F + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+        H: FnMut(E, DefaultAsyncMediator, State) -> Fut + Send + 'static,
     {
         let mediator = self.inner.clone();
 
@@ -1128,7 +1132,7 @@ impl Builder {
     pub fn add_stream_handler<Req, S, T, H>(self, handler: H) -> Self
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,
-        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + Sync + Send + 'static,
+        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + Send + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
@@ -1295,12 +1299,7 @@ impl Builder {
     where
         Req: Send + 'static,
         Res: Send + 'static,
-        H: FnMut(
-                Req,
-                Box<dyn FnOnce(Req) -> BoxFuture<'static, Res> + Send>,
-            ) -> BoxFuture<'static, Res>
-            + Send
-            + 'static,
+        H: FnMut(Req, NextCallbackFut<Req, Res>) -> BoxFuture<'static, Res> + Send + 'static,
     {
         let req_ty = TypeId::of::<Req>();
         let res_ty = TypeId::of::<Res>();
@@ -1351,12 +1350,7 @@ impl Builder {
         Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
         S: Stream<Item = T> + Send + 'static,
         T: Send + 'static,
-        H: FnMut(
-                Req,
-                Box<dyn FnOnce(Req) -> BoxFuture<'static, S> + Send>,
-            ) -> BoxFuture<'static, S>
-            + Send
-            + 'static,
+        H: FnMut(Req, NextCallbackFut<Req, S>) -> BoxFuture<'static, S> + Send + 'static,
     {
         let key = InterceptorKey::of::<Req, S>();
         let mediator = self.inner.clone();
