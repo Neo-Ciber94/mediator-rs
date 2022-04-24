@@ -17,6 +17,12 @@ https://en.wikipedia.org/wiki/Mediator_pattern
 mediator = "0.2"
 ```
 
+## Tests
+To run the tests use the following command:
+```bash
+cargo test --all-features
+```
+
 ## Examples
 
 ### Basic usage
@@ -117,7 +123,7 @@ async fn main() {
          })
         .build();
 
-    let mut stream = mediator.stream(CountdownRequest(3)).expect("stream failed");
+    let mut stream = mediator.stream(CountdownRequest(3)).await.expect("stream failed");
     assert_eq!(stream.next().await.unwrap(), 3);
     assert_eq!(stream.next().await.unwrap(), 2);
     assert_eq!(stream.next().await.unwrap(), 1);

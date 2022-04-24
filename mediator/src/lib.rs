@@ -18,6 +18,12 @@
 //! mediator = "0.2"
 //! ```
 //!
+//! ## Tests
+//! To run the tests use the following command:
+//! ```bash
+//! cargo test --all-features
+//! ```
+//!
 //! ## Examples
 //!
 //! ### Basic usage
