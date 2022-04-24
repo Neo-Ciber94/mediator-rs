@@ -22,8 +22,6 @@ type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 type SharedAsyncHandler<H> = Arc<AsyncMutex<HashMap<TypeId, H>>>;
 
-type SharedHandler<H> = Arc<Mutex<HashMap<TypeId, H>>>;
-
 // A wrapper around the request handler to handle the request and return the result.
 // To provide type safety without unsafe code we box all: the function, the params and the result.
 #[derive(Clone)]
@@ -516,10 +514,14 @@ impl InterceptorKey {
 #[cfg(feature = "interceptors")]
 #[derive(Clone)]
 enum InterceptorWrapper {
-    Handler(Arc<AsyncMutex<dyn FnMut(Box<dyn Any + Send>, NextCallback) -> BoxAnySendFuture + Send>>),
+    Handler(
+        Arc<AsyncMutex<dyn FnMut(Box<dyn Any + Send>, NextCallback) -> BoxAnySendFuture + Send>>,
+    ),
 
     #[cfg(feature = "streams")]
-    Stream(Arc<AsyncMutex<dyn FnMut(Box<dyn Any + Send>, NextCallback) -> BoxAnySendFuture + Send>>),
+    Stream(
+        Arc<AsyncMutex<dyn FnMut(Box<dyn Any + Send>, NextCallback) -> BoxAnySendFuture + Send>>,
+    ),
 }
 
 #[cfg(feature = "interceptors")]
@@ -701,7 +703,7 @@ pub struct DefaultAsyncMediator {
     interceptors: Arc<AsyncMutex<HashMap<InterceptorKey, Vec<InterceptorWrapper>>>>,
 
     #[cfg(feature = "streams")]
-    stream_handlers: SharedHandler<StreamRequestHandlerWrapper>,
+    stream_handlers: SharedAsyncHandler<StreamRequestHandlerWrapper>,
 }
 
 impl DefaultAsyncMediator {
@@ -742,22 +744,26 @@ impl AsyncMediator for DefaultAsyncMediator {
 
                 let key = InterceptorKey::of::<Req, Res>();
                 if let Some(interceptors) = interceptors.get_mut(&key).cloned() {
-                    let next_handler : Box<dyn FnOnce(Req) -> BoxFuture<'static, Res> + Send> = Box::new(move |req: Req| {
-                        Box::pin(async move { handler.handle(req, mediator).await.unwrap().await })
-                    });
+                    let next_handler: Box<dyn FnOnce(Req) -> BoxFuture<'static, Res> + Send> =
+                        Box::new(move |req: Req| {
+                            Box::pin(
+                                async move { handler.handle(req, mediator).await.unwrap().await },
+                            )
+                        });
 
-                    let handler : Box<dyn FnOnce(Req) -> BoxFuture<'static, Res> + Send> = interceptors.into_iter().fold(
-                        next_handler,
-                        move |next, mut interceptor| {
-                            Box::new(move |req: Req| {
-                                Box::pin(async move {
-                                    // SAFETY: this only fail if the downcast fails,
-                                    // but we already checked that the type is correct
-                                    interceptor.handle(req, next).await.unwrap().await
+                    let handler: Box<dyn FnOnce(Req) -> BoxFuture<'static, Res> + Send> =
+                        interceptors.into_iter().fold(
+                            next_handler,
+                            move |next, mut interceptor| {
+                                Box::new(move |req: Req| {
+                                    Box::pin(async move {
+                                        // SAFETY: this only fail if the downcast fails,
+                                        // but we already checked that the type is correct
+                                        interceptor.handle(req, next).await.unwrap().await
+                                    })
                                 })
-                            })
-                        },
-                    );
+                            },
+                        );
 
                     let res = handler(req).await;
                     return Ok(res);
@@ -825,7 +831,35 @@ impl AsyncMediator for DefaultAsyncMediator {
                 None
             };
 
+            #[cfg(feature = "interceptors")]
+            {
+                let mut interceptors = self.interceptors.lock().await;
 
+                let key = InterceptorKey::of::<Req, S>();
+                if let Some(interceptors) = interceptors.get_mut(&key).cloned() {
+                    let next_handler: Box<dyn FnOnce(Req) -> BoxFuture<'static, S> + Send> =
+                        Box::new(move |req: Req| {
+                            Box::pin(async move { handler.handle(req, mediator).unwrap() })
+                        });
+
+                    let handler: Box<dyn FnOnce(Req) -> BoxFuture<'static, S> + Send> =
+                        interceptors.into_iter().fold(
+                            next_handler,
+                            move |next, mut interceptor| {
+                                Box::new(move |req: Req| {
+                                    Box::pin(async move {
+                                        // SAFETY: this only fail if the downcast fails,
+                                        // but we already checked that the type is correct
+                                        interceptor.stream(req, next).await.unwrap()
+                                    })
+                                })
+                            },
+                        );
+
+                    let stream = handler(req).await;
+                    return Ok(stream);
+                }
+            }
 
             if let Some(stream) = handler.handle(req, mediator) {
                 return Ok(stream);
@@ -853,7 +887,7 @@ impl Builder {
                 interceptors: Default::default(),
 
                 #[cfg(feature = "streams")]
-                stream_handlers: SharedHandler::default(),
+                stream_handlers: SharedAsyncHandler::default(),
             },
         }
     }
@@ -869,12 +903,10 @@ impl Builder {
 
         // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                let handler = RequestHandlerWrapper::new(handler);
-                let mut handlers = mediator.request_handlers.lock().await;
-                handlers.insert(TypeId::of::<Req>(), handler);
-            });
+        run_blocking(async move {
+            let handler = RequestHandlerWrapper::new(handler);
+            let mut handlers = mediator.request_handlers.lock().await;
+            handlers.insert(TypeId::of::<Req>(), handler);
         });
 
         self
@@ -892,12 +924,10 @@ impl Builder {
 
         // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                let handler = RequestHandlerWrapper::from_fn(handler);
-                let mut handlers = mediator.request_handlers.lock().await;
-                handlers.insert(TypeId::of::<Req>(), handler);
-            });
+        run_blocking(async move {
+            let handler = RequestHandlerWrapper::from_fn(handler);
+            let mut handlers = mediator.request_handlers.lock().await;
+            handlers.insert(TypeId::of::<Req>(), handler);
         });
         self
     }
@@ -914,13 +944,12 @@ impl Builder {
 
         // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                let handler = RequestHandlerWrapper::from_fn_with(handler, state);
-                let mut handlers = mediator.request_handlers.lock().await;
-                handlers.insert(TypeId::of::<Req>(), handler);
-            });
+        run_blocking(async move {
+            let handler = RequestHandlerWrapper::from_fn_with(handler, state);
+            let mut handlers = mediator.request_handlers.lock().await;
+            handlers.insert(TypeId::of::<Req>(), handler);
         });
+
         self
     }
 
@@ -948,13 +977,12 @@ impl Builder {
 
         // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                let handler = RequestHandlerWrapper::from_deferred(f);
-                let mut handlers = mediator.request_handlers.lock().await;
-                handlers.insert(TypeId::of::<Req>(), handler);
-            });
+        run_blocking(async move {
+            let handler = RequestHandlerWrapper::from_deferred(f);
+            let mut handlers = mediator.request_handlers.lock().await;
+            handlers.insert(TypeId::of::<Req>(), handler);
         });
+
         self
     }
 
@@ -971,13 +999,12 @@ impl Builder {
 
         // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                let handler = RequestHandlerWrapper::from_deferred_with(f, state);
-                let mut handlers = mediator.request_handlers.lock().await;
-                handlers.insert(TypeId::of::<Req>(), handler);
-            });
+        run_blocking(async move {
+            let handler = RequestHandlerWrapper::from_deferred_with(f, state);
+            let mut handlers = mediator.request_handlers.lock().await;
+            handlers.insert(TypeId::of::<Req>(), handler);
         });
+
         self
     }
 
@@ -991,13 +1018,11 @@ impl Builder {
 
         // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                let handler = EventHandlerWrapper::new(handler);
-                let mut handlers = mediator.event_handlers.lock().await;
-                let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
-                event_handlers.push(handler);
-            });
+        run_blocking(async move {
+            let handler = EventHandlerWrapper::new(handler);
+            let mut handlers = mediator.event_handlers.lock().await;
+            let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
+            event_handlers.push(handler);
         });
 
         self
@@ -1014,13 +1039,11 @@ impl Builder {
 
         // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                let handler = EventHandlerWrapper::from_fn(handler);
-                let mut handlers = mediator.event_handlers.lock().await;
-                let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
-                event_handlers.push(handler);
-            });
+        run_blocking(async move {
+            let handler = EventHandlerWrapper::from_fn(handler);
+            let mut handlers = mediator.event_handlers.lock().await;
+            let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
+            event_handlers.push(handler);
         });
 
         self
@@ -1037,13 +1060,11 @@ impl Builder {
 
         // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                let handler = EventHandlerWrapper::from_fn_with(handler, state);
-                let mut handlers = mediator.event_handlers.lock().await;
-                let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
-                event_handlers.push(handler);
-            });
+        run_blocking(async move {
+            let handler = EventHandlerWrapper::from_fn_with(handler, state);
+            let mut handlers = mediator.event_handlers.lock().await;
+            let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
+            event_handlers.push(handler);
         });
 
         self
@@ -1071,13 +1092,11 @@ impl Builder {
 
         // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                let handler = EventHandlerWrapper::from_deferred(f);
-                let mut handlers = mediator.event_handlers.lock().await;
-                let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
-                event_handlers.push(handler);
-            });
+        run_blocking(async move {
+            let handler = EventHandlerWrapper::from_deferred(f);
+            let mut handlers = mediator.event_handlers.lock().await;
+            let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
+            event_handlers.push(handler);
         });
 
         self
@@ -1094,13 +1113,11 @@ impl Builder {
 
         // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                let handler = EventHandlerWrapper::from_deferred_with(f, state);
-                let mut handlers = mediator.event_handlers.lock().await;
-                let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
-                event_handlers.push(handler);
-            });
+        run_blocking(async move {
+            let handler = EventHandlerWrapper::from_deferred_with(f, state);
+            let mut handlers = mediator.event_handlers.lock().await;
+            let event_handlers = handlers.entry(TypeId::of::<E>()).or_insert_with(Vec::new);
+            event_handlers.push(handler);
         });
 
         self
@@ -1115,12 +1132,19 @@ impl Builder {
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
-        let mut handlers_lock = self.inner.stream_handlers.lock().unwrap();
-        handlers_lock.insert(
-            TypeId::of::<Req>(),
-            StreamRequestHandlerWrapper::new(handler),
-        );
-        drop(handlers_lock);
+        let mediator = self.inner.clone();
+
+        // FIXME: Find a way to prevent using async in the builder
+        // We block the thread to keep the api signature consistent and don't require await
+        run_blocking(async move {
+            let mut handlers_lock = mediator.stream_handlers.lock().await;
+            handlers_lock.insert(
+                TypeId::of::<Req>(),
+                StreamRequestHandlerWrapper::new(handler),
+            );
+            drop(handlers_lock);
+        });
+
         self
     }
 
@@ -1133,9 +1157,16 @@ impl Builder {
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
-        let mut handlers_lock = self.inner.stream_handlers.lock().unwrap();
-        handlers_lock.insert(TypeId::of::<Req>(), StreamRequestHandlerWrapper::from_fn(f));
-        drop(handlers_lock);
+        let mediator = self.inner.clone();
+
+        // FIXME: Find a way to prevent using async in the builder
+        // We block the thread to keep the api signature consistent and don't require await
+        run_blocking(async move {
+            let mut handlers_lock = mediator.stream_handlers.lock().await;
+            handlers_lock.insert(TypeId::of::<Req>(), StreamRequestHandlerWrapper::from_fn(f));
+            drop(handlers_lock);
+        });
+
         self
     }
 
@@ -1148,12 +1179,19 @@ impl Builder {
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
-        let mut handlers_lock = self.inner.stream_handlers.lock().unwrap();
-        handlers_lock.insert(
-            TypeId::of::<Req>(),
-            StreamRequestHandlerWrapper::from_fn_with(f, state),
-        );
-        drop(handlers_lock);
+        let mediator = self.inner.clone();
+
+        // FIXME: Find a way to prevent using async in the builder
+        // We block the thread to keep the api signature consistent and don't require await
+        run_blocking(async move {
+            let mut handlers_lock = mediator.stream_handlers.lock().await;
+            handlers_lock.insert(
+                TypeId::of::<Req>(),
+                StreamRequestHandlerWrapper::from_fn_with(f, state),
+            );
+            drop(handlers_lock);
+        });
+
         self
     }
 
@@ -1180,12 +1218,19 @@ impl Builder {
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
-        let mut handlers_lock = self.inner.stream_handlers.lock().unwrap();
-        handlers_lock.insert(
-            TypeId::of::<Req>(),
-            StreamRequestHandlerWrapper::from_deferred(f),
-        );
-        drop(handlers_lock);
+        let mediator = self.inner.clone();
+
+        // FIXME: Find a way to prevent using async in the builder
+        // We block the thread to keep the api signature consistent and don't require await
+        run_blocking(async move {
+            let mut handlers_lock = mediator.stream_handlers.lock().await;
+            handlers_lock.insert(
+                TypeId::of::<Req>(),
+                StreamRequestHandlerWrapper::from_deferred(f),
+            );
+            drop(handlers_lock);
+        });
+
         self
     }
 
@@ -1202,12 +1247,19 @@ impl Builder {
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
-        let mut handlers_lock = self.inner.stream_handlers.lock().unwrap();
-        handlers_lock.insert(
-            TypeId::of::<Req>(),
-            StreamRequestHandlerWrapper::from_deferred_with(f, state),
-        );
-        drop(handlers_lock);
+        let mediator = self.inner.clone();
+
+        // FIXME: Find a way to prevent using async in the builder
+        // We block the thread to keep the api signature consistent and don't require await
+        run_blocking(async move {
+            let mut handlers_lock = mediator.stream_handlers.lock().await;
+            handlers_lock.insert(
+                TypeId::of::<Req>(),
+                StreamRequestHandlerWrapper::from_deferred_with(f, state),
+            );
+            drop(handlers_lock);
+        });
+
         self
     }
 
@@ -1227,13 +1279,11 @@ impl Builder {
 
         // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                let mut handlers_lock = mediator.interceptors.lock().await;
-                let interceptors = handlers_lock.entry(key).or_insert(Vec::new());
-                interceptors.push(InterceptorWrapper::from_handler(handler));
-                drop(handlers_lock);
-            });
+        run_blocking(async move {
+            let mut handlers_lock = mediator.interceptors.lock().await;
+            let interceptors = handlers_lock.entry(key).or_insert(Vec::new());
+            interceptors.push(InterceptorWrapper::from_handler(handler));
+            drop(handlers_lock);
         });
 
         self
@@ -1260,13 +1310,11 @@ impl Builder {
 
         // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                let mut handlers_lock = mediator.interceptors.lock().await;
-                let interceptors = handlers_lock.entry(key).or_insert(Vec::new());
-                interceptors.push(InterceptorWrapper::from_handler_fn(handler));
-                drop(handlers_lock);
-            });
+        run_blocking(async move {
+            let mut handlers_lock = mediator.interceptors.lock().await;
+            let interceptors = handlers_lock.entry(key).or_insert(Vec::new());
+            interceptors.push(InterceptorWrapper::from_handler_fn(handler));
+            drop(handlers_lock);
         });
 
         self
@@ -1286,13 +1334,11 @@ impl Builder {
 
         // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                let mut handlers_lock = mediator.interceptors.lock().await;
-                let interceptors = handlers_lock.entry(key).or_insert(Vec::new());
-                interceptors.push(InterceptorWrapper::from_stream(handler));
-                drop(handlers_lock);
-            });
+        run_blocking(async move {
+            let mut handlers_lock = mediator.interceptors.lock().await;
+            let interceptors = handlers_lock.entry(key).or_insert(Vec::new());
+            interceptors.push(InterceptorWrapper::from_stream(handler));
+            drop(handlers_lock);
         });
 
         self
@@ -1317,13 +1363,11 @@ impl Builder {
 
         // FIXME: Find a way to prevent using async in the builder
         // We block the thread to keep the api signature consistent and don't require await
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
-                let mut handlers_lock = mediator.interceptors.lock().await;
-                let interceptors = handlers_lock.entry(key).or_insert(Vec::new());
-                interceptors.push(InterceptorWrapper::from_stream_fn(handler));
-                drop(handlers_lock);
-            });
+        run_blocking(async move {
+            let mut handlers_lock = mediator.interceptors.lock().await;
+            let interceptors = handlers_lock.entry(key).or_insert(Vec::new());
+            interceptors.push(InterceptorWrapper::from_stream_fn(handler));
+            drop(handlers_lock);
         });
 
         self
@@ -1356,6 +1400,13 @@ impl Default for Builder {
 fn _dummy() {
     fn assert_send_sync<T: Send + Sync>(_: T) {}
     assert_send_sync(DefaultAsyncMediator::builder().build());
+}
+
+#[inline]
+fn run_blocking<Fut: Future>(future: Fut) {
+    tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(future);
+    });
 }
 
 #[cfg(test)]
