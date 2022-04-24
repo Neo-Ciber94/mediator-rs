@@ -414,7 +414,7 @@ impl StreamRequestHandlerWrapper {
 
     pub fn from_fn_with<State, Req, S, T, F>(mut handler: F, state: State) -> Self
     where
-        State: Sync + Send + Clone + 'static,
+        State: Send + Clone + 'static,
         Req: StreamRequest<Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
         F: FnMut(Req, State) -> S + Send + 'static,
@@ -451,7 +451,7 @@ impl StreamRequestHandlerWrapper {
 
     pub fn from_deferred_with<State, Req, S, T, F>(mut handler: F, state: State) -> Self
     where
-        State: Sync + Send + Clone + 'static,
+        State: Send + Clone + 'static,
         Req: StreamRequest<Stream = S, Item = T> + 'static,
         S: Stream<Item = T> + 'static,
         F: FnMut(Req, DefaultAsyncMediator, State) -> S + Send + 'static,
@@ -1157,7 +1157,7 @@ impl Builder {
     pub fn add_stream_handler_fn<Req, S, T, F>(self, f: F) -> Self
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,
-        F: FnMut(Req) -> S + Sync + Send + 'static,
+        F: FnMut(Req) -> S + Send + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
@@ -1177,9 +1177,9 @@ impl Builder {
     #[cfg(feature = "streams")]
     pub fn add_stream_handler_fn_with<State, Req, S, T, F>(self, state: State, f: F) -> Self
     where
-        State: Sync + Send + Clone + 'static,
+        State: Send + Clone + 'static,
         Req: StreamRequest<Stream = S, Item = T> + 'static,
-        F: FnMut(Req, State) -> S + Sync + Send + 'static,
+        F: FnMut(Req, State) -> S + Send + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
@@ -1204,10 +1204,10 @@ impl Builder {
     pub fn add_stream_handler_deferred<Req, S, T, H, F>(self, f: F) -> Self
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,
-        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + Sync + Send + 'static,
+        H: StreamRequestHandler<Request = Req, Stream = S, Item = T> + Send + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
-        F: Fn(DefaultAsyncMediator) -> H + Sync + Send,
+        F: Fn(DefaultAsyncMediator) -> H + Send,
     {
         let handler = f(self.inner.clone());
         self.add_stream_handler(handler)
@@ -1218,7 +1218,7 @@ impl Builder {
     pub fn add_stream_handler_fn_deferred<Req, S, T, F>(self, f: F) -> Self
     where
         Req: StreamRequest<Stream = S, Item = T> + 'static,
-        F: FnMut(Req, DefaultAsyncMediator) -> S + Sync + Send + 'static,
+        F: FnMut(Req, DefaultAsyncMediator) -> S + Send + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
@@ -1245,9 +1245,9 @@ impl Builder {
         f: F,
     ) -> Self
     where
-        State: Sync + Send + Clone + 'static,
+        State: Send + Clone + 'static,
         Req: StreamRequest<Stream = S, Item = T> + 'static,
-        F: FnMut(Req, DefaultAsyncMediator, State) -> S + Sync + Send + 'static,
+        F: FnMut(Req, DefaultAsyncMediator, State) -> S + Send + 'static,
         S: Stream<Item = T> + 'static,
         T: 'static,
     {
