@@ -493,6 +493,8 @@ impl StreamRequestHandlerWrapper {
 
 #[cfg(feature = "interceptors")]
 type NextCallback = Box<dyn Any + Send>;
+type BoxAnySendFuture = BoxFuture<'static, Box<dyn Any + Send>>;
+type BoxFnOnceFuture<Req, Res> = Box<dyn FnOnce(Req) -> BoxFuture<'static, Res> + Send>;
 
 #[cfg(feature = "interceptors")]
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -514,39 +516,23 @@ impl InterceptorKey {
 #[cfg(feature = "interceptors")]
 #[derive(Clone)]
 enum InterceptorWrapper {
-    Handler(
-        Arc<
-            Mutex<
-                dyn FnMut(Box<dyn Any + Send>, NextCallback) -> BoxFuture<'static, Box<dyn Any>>
-                    + Send,
-            >,
-        >,
-    ),
+    Handler(Arc<AsyncMutex<dyn FnMut(Box<dyn Any + Send>, NextCallback) -> BoxAnySendFuture + Send>>),
 
     #[cfg(feature = "streams")]
-    Stream(
-        Arc<
-            Mutex<
-                dyn FnMut(Box<dyn Any + Send>, NextCallback) -> BoxFuture<'static, Box<dyn Any>>
-                    + Send,
-            >,
-        >,
-    ),
+    Stream(Arc<AsyncMutex<dyn FnMut(Box<dyn Any + Send>, NextCallback) -> BoxAnySendFuture + Send>>),
 }
 
 #[cfg(feature = "interceptors")]
 impl InterceptorWrapper {
     pub fn from_handler<Req, Res, H>(handler: H) -> Self
     where
-        Res: 'static,
+        Res: Send + 'static,
         Req: Send + 'static,
         H: AsyncInterceptor<Req, Res> + Send + 'static,
     {
         let handler = Arc::new(AsyncMutex::new(handler));
 
-        let f = move |req: Box<dyn Any + Send>,
-                      next: NextCallback|
-              -> BoxFuture<'static, Box<dyn Any>> {
+        let f = move |req: Box<dyn Any + Send>, next: NextCallback| -> BoxAnySendFuture {
             let handler = handler.clone();
             let req = *req.downcast::<Req>().unwrap();
 
@@ -557,32 +543,24 @@ impl InterceptorWrapper {
             let res = async move {
                 let mut req_handler = handler.lock().await;
                 let res = req_handler.handle(req, next).await;
-                let box_res: Box<dyn Any> = Box::new(res);
-                box_res
+                Box::new(res) as Box<dyn Any + Send>
             };
 
             Box::pin(res)
         };
 
-        InterceptorWrapper::Handler(Arc::new(Mutex::new(f)))
+        InterceptorWrapper::Handler(Arc::new(AsyncMutex::new(f)))
     }
 
     pub fn from_handler_fn<Req, Res, H>(handler: H) -> Self
     where
         Req: Send + 'static,
-        Res: 'static,
-        H: FnMut(
-                Req,
-                Box<dyn FnOnce(Req) -> BoxFuture<'static, Res> + Send>,
-            ) -> BoxFuture<'static, Res>
-            + Send
-            + 'static,
+        Res: Send + 'static,
+        H: FnMut(Req, BoxFnOnceFuture<Req, Res>) -> BoxFuture<'static, Res> + Send + 'static,
     {
         let handler = Arc::new(AsyncMutex::new(handler));
 
-        let f = move |req: Box<dyn Any + Send>,
-                      next: NextCallback|
-              -> BoxFuture<'static, Box<dyn Any>> {
+        let f = move |req: Box<dyn Any + Send>, next: NextCallback| -> BoxAnySendFuture {
             let handler = handler.clone();
             let req = *req.downcast::<Req>().unwrap();
 
@@ -593,14 +571,13 @@ impl InterceptorWrapper {
             let res = async move {
                 let mut req_handler = handler.lock().await;
                 let res = req_handler(req, next).await;
-                let box_res: Box<dyn Any> = Box::new(res);
-                box_res
+                Box::new(res) as Box<dyn Any + Send>
             };
 
             Box::pin(res)
         };
 
-        InterceptorWrapper::Handler(Arc::new(Mutex::new(f)))
+        InterceptorWrapper::Handler(Arc::new(AsyncMutex::new(f)))
     }
 
     #[cfg(feature = "streams")]
@@ -613,7 +590,7 @@ impl InterceptorWrapper {
     {
         let handler = Arc::new(AsyncMutex::new(handler));
 
-        let f = move |req: Box<dyn Any + Send>, next: NextCallback| -> BoxFuture<Box<dyn Any>> {
+        let f = move |req: Box<dyn Any + Send>, next: NextCallback| -> BoxAnySendFuture {
             let handler = handler.clone();
             let req = *req.downcast::<Req>().unwrap();
             let next = next
@@ -623,30 +600,25 @@ impl InterceptorWrapper {
             let res = async move {
                 let mut req_handler = handler.lock().await;
                 let res_fut = req_handler.handle_stream(req, next).await;
-                Box::new(res_fut) as Box<dyn Any>
+                Box::new(res_fut) as Box<dyn Any + Send>
             };
             Box::pin(res)
         };
 
-        InterceptorWrapper::Stream(Arc::new(Mutex::new(f)))
+        InterceptorWrapper::Stream(Arc::new(AsyncMutex::new(f)))
     }
 
     #[cfg(feature = "streams")]
     pub fn from_stream_fn<Req, T, S, H>(handler: H) -> Self
     where
         Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
-        H: FnMut(
-                Req,
-                Box<dyn FnOnce(Req) -> BoxFuture<'static, S> + Send>,
-            ) -> BoxFuture<'static, S>
-            + Send
-            + 'static,
+        H: FnMut(Req, BoxFnOnceFuture<Req, S>) -> BoxFuture<'static, S> + Send + 'static,
         S: Stream<Item = T> + Send + 'static,
         T: Send + 'static,
     {
         let handler = Arc::new(AsyncMutex::new(handler));
 
-        let f = move |req: Box<dyn Any + Send>, next: NextCallback| -> BoxFuture<Box<dyn Any>> {
+        let f = move |req: Box<dyn Any + Send>, next: NextCallback| -> BoxAnySendFuture {
             let handler = handler.clone();
             let req = *req.downcast::<Req>().unwrap();
             let next = next
@@ -656,12 +628,12 @@ impl InterceptorWrapper {
             let res = async move {
                 let mut req_handler = handler.lock().await;
                 let res_fut = req_handler(req, next).await;
-                Box::new(res_fut) as Box<dyn Any>
+                Box::new(res_fut) as Box<dyn Any + Send>
             };
             Box::pin(res)
         };
 
-        InterceptorWrapper::Stream(Arc::new(Mutex::new(f)))
+        InterceptorWrapper::Stream(Arc::new(AsyncMutex::new(f)))
     }
 
     pub async fn handle<Req, Res>(
@@ -674,11 +646,11 @@ impl InterceptorWrapper {
         Res: Send + 'static,
     {
         if let InterceptorWrapper::Handler(handler) = self {
-            let mut handler = handler.lock().unwrap();
+            let mut handler = handler.lock().await;
             let req: Box<dyn Any + Send> = Box::new(req);
             let next: Box<dyn Any + Send> = Box::new(next);
 
-            let res_fut: BoxFuture<'static, Box<dyn Any>> = (handler)(req, next);
+            let res_fut: BoxFuture<'static, Box<dyn Any + Send>> = (handler)(req, next);
             let res = res_fut.await;
 
             match res.downcast::<Res>().map(|res| *res).ok() {
@@ -702,11 +674,11 @@ impl InterceptorWrapper {
         T: Send + 'static,
     {
         if let InterceptorWrapper::Stream(handler) = self {
-            let mut handler = handler.lock().unwrap();
+            let mut handler = handler.lock().await;
             let req: Box<dyn Any + Send> = Box::new(req);
             let next: Box<dyn Any + Send> = Box::new(next);
 
-            let stream_fut: BoxFuture<'static, Box<dyn Any>> = (handler)(req, next);
+            let stream_fut: BoxFuture<'static, Box<dyn Any + Send>> = (handler)(req, next);
             let stream = stream_fut.await;
 
             match stream.downcast::<S>().map(|stream| *stream).ok() {
@@ -726,7 +698,7 @@ pub struct DefaultAsyncMediator {
     event_handlers: SharedAsyncHandler<Vec<EventHandlerWrapper>>,
 
     #[cfg(feature = "interceptors")]
-    interceptors: Arc<Mutex<HashMap<InterceptorKey, Vec<InterceptorWrapper>>>>,
+    interceptors: Arc<AsyncMutex<HashMap<InterceptorKey, Vec<InterceptorWrapper>>>>,
 
     #[cfg(feature = "streams")]
     stream_handlers: SharedHandler<StreamRequestHandlerWrapper>,
@@ -761,6 +733,36 @@ impl AsyncMediator for DefaultAsyncMediator {
             } else {
                 None
             };
+
+            #[cfg(feature = "interceptors")]
+            {
+                //type FnFuture<Rq, Rs> = Box<dyn FnOnce(Rq) -> BoxFuture<'static, Rs> + Send>;
+
+                let mut interceptors = self.interceptors.lock().await;
+
+                let key = InterceptorKey::of::<Req, Res>();
+                if let Some(interceptors) = interceptors.get_mut(&key).cloned() {
+                    let next_handler : Box<dyn FnOnce(Req) -> BoxFuture<'static, Res> + Send> = Box::new(move |req: Req| {
+                        Box::pin(async move { handler.handle(req, mediator).await.unwrap().await })
+                    });
+
+                    let handler : Box<dyn FnOnce(Req) -> BoxFuture<'static, Res> + Send> = interceptors.into_iter().fold(
+                        next_handler,
+                        move |next, mut interceptor| {
+                            Box::new(move |req: Req| {
+                                Box::pin(async move {
+                                    // SAFETY: this only fail if the downcast fails,
+                                    // but we already checked that the type is correct
+                                    interceptor.handle(req, next).await.unwrap().await
+                                })
+                            })
+                        },
+                    );
+
+                    let res = handler(req).await;
+                    return Ok(res);
+                }
+            }
 
             if let Some(res_future) = handler.handle(req, mediator).await {
                 let res = res_future.await;
@@ -801,11 +803,11 @@ impl AsyncMediator for DefaultAsyncMediator {
     }
 
     #[cfg(feature = "streams")]
-    fn stream<Req, S, T>(&mut self, req: Req) -> crate::Result<S>
+    async fn stream<Req, S, T>(&mut self, req: Req) -> crate::Result<S>
     where
-        Req: StreamRequest<Stream = S, Item = T> + 'static,
-        S: Stream<Item = T> + 'static,
-        T: 'static,
+        Req: StreamRequest<Stream = S, Item = T> + Send + 'static,
+        S: Stream<Item = T> + Send + 'static,
+        T: Send + 'static,
     {
         let type_id = TypeId::of::<Req>();
         let mut handlers_lock = self
@@ -822,6 +824,8 @@ impl AsyncMediator for DefaultAsyncMediator {
             } else {
                 None
             };
+
+
 
             if let Some(stream) = handler.handle(req, mediator) {
                 return Ok(stream);
@@ -1219,10 +1223,19 @@ impl Builder {
         let res_ty = TypeId::of::<Res>();
         let key = InterceptorKey { req_ty, res_ty };
 
-        let mut handlers_lock = self.inner.interceptors.lock().unwrap();
-        let interceptors = handlers_lock.entry(key).or_insert(Vec::new());
-        interceptors.push(InterceptorWrapper::from_handler(handler));
-        drop(handlers_lock);
+        let mediator = self.inner.clone();
+
+        // FIXME: Find a way to prevent using async in the builder
+        // We block the thread to keep the api signature consistent and don't require await
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                let mut handlers_lock = mediator.interceptors.lock().await;
+                let interceptors = handlers_lock.entry(key).or_insert(Vec::new());
+                interceptors.push(InterceptorWrapper::from_handler(handler));
+                drop(handlers_lock);
+            });
+        });
+
         self
     }
 
@@ -1242,10 +1255,20 @@ impl Builder {
         let req_ty = TypeId::of::<Req>();
         let res_ty = TypeId::of::<Res>();
         let key = InterceptorKey { req_ty, res_ty };
-        let mut handlers_lock = self.inner.interceptors.lock().unwrap();
-        let interceptors = handlers_lock.entry(key).or_insert(Vec::new());
-        interceptors.push(InterceptorWrapper::from_handler_fn(handler));
-        drop(handlers_lock);
+
+        let mediator = self.inner.clone();
+
+        // FIXME: Find a way to prevent using async in the builder
+        // We block the thread to keep the api signature consistent and don't require await
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                let mut handlers_lock = mediator.interceptors.lock().await;
+                let interceptors = handlers_lock.entry(key).or_insert(Vec::new());
+                interceptors.push(InterceptorWrapper::from_handler_fn(handler));
+                drop(handlers_lock);
+            });
+        });
+
         self
     }
 
@@ -1259,11 +1282,19 @@ impl Builder {
         H: AsyncStreamInterceptor<Request = Req, Stream = S, Item = T> + Send + 'static,
     {
         let key = InterceptorKey::of::<Req, S>();
+        let mediator = self.inner.clone();
 
-        let mut handlers_lock = self.inner.interceptors.lock().unwrap();
-        let interceptors = handlers_lock.entry(key).or_insert(Vec::new());
-        interceptors.push(InterceptorWrapper::from_stream(handler));
-        drop(handlers_lock);
+        // FIXME: Find a way to prevent using async in the builder
+        // We block the thread to keep the api signature consistent and don't require await
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                let mut handlers_lock = mediator.interceptors.lock().await;
+                let interceptors = handlers_lock.entry(key).or_insert(Vec::new());
+                interceptors.push(InterceptorWrapper::from_stream(handler));
+                drop(handlers_lock);
+            });
+        });
+
         self
     }
 
@@ -1282,10 +1313,19 @@ impl Builder {
             + 'static,
     {
         let key = InterceptorKey::of::<Req, S>();
-        let mut handlers_lock = self.inner.interceptors.lock().unwrap();
-        let interceptors = handlers_lock.entry(key).or_insert(Vec::new());
-        interceptors.push(InterceptorWrapper::from_stream_fn(handler));
-        drop(handlers_lock);
+        let mediator = self.inner.clone();
+
+        // FIXME: Find a way to prevent using async in the builder
+        // We block the thread to keep the api signature consistent and don't require await
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                let mut handlers_lock = mediator.interceptors.lock().await;
+                let interceptors = handlers_lock.entry(key).or_insert(Vec::new());
+                interceptors.push(InterceptorWrapper::from_stream_fn(handler));
+                drop(handlers_lock);
+            });
+        });
+
         self
     }
 
@@ -1408,7 +1448,7 @@ mod test {
             })
             .build();
 
-        let mut stream = mediator.stream(CounterRequest(4)).unwrap();
+        let mut stream = mediator.stream(CounterRequest(4)).await.unwrap();
 
         assert_eq!(stream.next().await.unwrap(), 0);
         assert_eq!(stream.next().await.unwrap(), 1);

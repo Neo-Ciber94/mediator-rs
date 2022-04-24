@@ -9,11 +9,7 @@ pub struct Yielder<T> {
 
 impl<T> Clone for Yielder<T> {
     fn clone(&self) -> Self {
-        let sender = self
-            .sender
-            .lock()
-            .expect("Unable to acquire lock")
-            .clone();
+        let sender = self.sender.lock().expect("Unable to acquire lock").clone();
         Yielder {
             sender: Mutex::new(sender),
         }

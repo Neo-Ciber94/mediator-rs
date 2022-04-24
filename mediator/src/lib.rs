@@ -118,7 +118,7 @@
 //!          })
 //!         .build();
 //!
-//!     let mut stream = mediator.stream(CountdownRequest(3)).expect("stream failed");
+//!     let mut stream = mediator.stream(CountdownRequest(3)).await.expect("stream failed");
 //!     assert_eq!(stream.next().await.unwrap(), 3);
 //!     assert_eq!(stream.next().await.unwrap(), 2);
 //!     assert_eq!(stream.next().await.unwrap(), 1);

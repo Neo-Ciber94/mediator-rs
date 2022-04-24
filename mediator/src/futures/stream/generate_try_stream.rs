@@ -106,7 +106,7 @@ where
                 }
 
                 Poll::Ready(None)
-            },
+            }
             Poll::Pending => Poll::Pending,
         }
     }

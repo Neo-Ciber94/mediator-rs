@@ -9,8 +9,8 @@ use crate::Interceptor;
 
 #[cfg(feature = "streams")]
 use {
-    crate::{StreamRequest, StreamRequestHandler},
     crate::futures::Stream,
+    crate::{StreamRequest, StreamRequestHandler},
 };
 
 type SharedHandler<H> = Arc<Mutex<HashMap<TypeId, H>>>;
@@ -311,16 +311,16 @@ enum InterceptorWrapper {
     Handler(Arc<Mutex<dyn FnMut(Box<dyn Any>, NextCallback) -> Box<dyn Any> + Send>>),
 
     #[cfg(feature = "streams")]
-    Stream(Arc<Mutex<dyn FnMut(Box<dyn Any>, NextCallback) -> Box<dyn Any> + Send>>)
+    Stream(Arc<Mutex<dyn FnMut(Box<dyn Any>, NextCallback) -> Box<dyn Any> + Send>>),
 }
 
 #[cfg(feature = "interceptors")]
 impl InterceptorWrapper {
     pub fn from_handler<Req, Res, H>(mut h: H) -> Self
-        where
-            Res: 'static,
-            Req: 'static,
-            H: Interceptor<Req, Res> + Send + 'static,
+    where
+        Res: 'static,
+        Req: 'static,
+        H: Interceptor<Req, Res> + Send + 'static,
     {
         let f = move |req: Box<dyn Any>, next: NextCallback| -> Box<dyn Any> {
             let req = *req.downcast::<Req>().unwrap();
@@ -332,12 +332,11 @@ impl InterceptorWrapper {
         InterceptorWrapper::Handler(Arc::new(Mutex::new(f)))
     }
 
-
     pub fn from_handler_fn<Req, Res, F>(mut f: F) -> Self
-        where
-            Req: 'static,
-            Res: 'static,
-            F: FnMut(Req, Box<dyn FnOnce(Req) -> Res>) -> Res + Send + 'static,
+    where
+        Req: 'static,
+        Res: 'static,
+        F: FnMut(Req, Box<dyn FnOnce(Req) -> Res>) -> Res + Send + 'static,
     {
         let f = move |req: Box<dyn Any>, next: NextCallback| -> Box<dyn Any> {
             let req = *req.downcast::<Req>().unwrap();
@@ -351,11 +350,11 @@ impl InterceptorWrapper {
 
     #[cfg(feature = "streams")]
     pub fn from_stream<Req, T, S, H>(mut h: H) -> Self
-        where
-            Req: StreamRequest<Stream = S, Item = T> + 'static,
-            H: StreamInterceptor<Request = Req, Stream = S, Item = T> + Send + 'static,
-            S: Stream<Item = T> + 'static,
-            T: 'static,
+    where
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        H: StreamInterceptor<Request = Req, Stream = S, Item = T> + Send + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static,
     {
         let f = move |req: Box<dyn Any>, next: NextCallback| -> Box<dyn Any> {
             let req = *req.downcast::<Req>().unwrap();
@@ -369,11 +368,12 @@ impl InterceptorWrapper {
 
     #[cfg(feature = "streams")]
     pub fn from_stream_fn<Req, T, S, F>(mut f: F) -> Self
-        where
-            Req: StreamRequest<Stream = S, Item = T> + 'static,
-            F: FnMut(Req, Box<dyn FnOnce(Req) -> S>) -> S + Send + 'static,
-            S: Stream<Item = T> + 'static,
-            T: 'static {
+    where
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        F: FnMut(Req, Box<dyn FnOnce(Req) -> S>) -> S + Send + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static,
+    {
         let f = move |req: Box<dyn Any>, next: NextCallback| -> Box<dyn Any> {
             let req = *req.downcast::<Req>().unwrap();
             let next = next.downcast::<Box<dyn FnOnce(Req) -> S>>().unwrap();
@@ -385,15 +385,15 @@ impl InterceptorWrapper {
     }
 
     pub fn handle<Req, Res>(&mut self, req: Req, next: Box<dyn FnOnce(Req) -> Res>) -> Option<Res>
-        where
-            Req: Request<Res> + 'static,
-            Res: 'static,
+    where
+        Req: Request<Res> + 'static,
+        Res: 'static,
     {
         if let InterceptorWrapper::Handler(handler) = self {
             let mut handler = handler.lock().unwrap();
             let req: Box<dyn Any> = Box::new(req);
             let next: Box<dyn Any> = Box::new(next);
-            let res : Box<dyn Any> = (handler)(req, next);
+            let res: Box<dyn Any> = (handler)(req, next);
             res.downcast::<Res>().map(|res| *res).ok()
         } else {
             None
@@ -402,16 +402,16 @@ impl InterceptorWrapper {
 
     #[cfg(feature = "streams")]
     pub fn stream<Req, T, S>(&mut self, req: Req, next: Box<dyn FnOnce(Req) -> S>) -> Option<S>
-        where
-            Req: StreamRequest<Stream = S, Item = T> + 'static,
-            S: Stream<Item = T> + 'static,
-            T: 'static,
+    where
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static,
     {
         if let InterceptorWrapper::Stream(handler) = self {
             let mut handler = handler.lock().unwrap();
             let req: Box<dyn Any> = Box::new(req);
             let next: Box<dyn Any> = Box::new(next);
-            let res : Box<dyn Any> = (handler)(req, next);
+            let res: Box<dyn Any> = (handler)(req, next);
             res.downcast::<S>().map(|res| *res).ok()
         } else {
             None
@@ -522,27 +522,24 @@ impl Mediator for DefaultMediator {
 
             #[cfg(feature = "interceptors")]
             {
-                let mut interceptors = self
-                    .interceptors
-                    .lock()
-                    .expect("Interceptors are locked");
+                let mut interceptors = self.interceptors.lock().expect("Interceptors are locked");
 
                 let key = InterceptorKey::of::<Req, Res>();
                 if let Some(interceptors) = interceptors.get_mut(&key).cloned() {
-                    let next_handler: Box<dyn FnOnce(Req) -> Res> = Box::new(move |req: Req| {
-                        handler.handle(req, mediator).unwrap()
-                    });
+                    let next_handler: Box<dyn FnOnce(Req) -> Res> =
+                        Box::new(move |req: Req| handler.handle(req, mediator).unwrap());
 
-                    let handler = interceptors
-                        .into_iter()
-                        .fold(next_handler, move |next, mut interceptor| {
-                        let f = move |req: Req| {
-                            // SAFETY: this only fail if the downcast fails,
-                            // but we already checked that the type is correct
-                            interceptor.handle(req, next).unwrap()
-                        };
-                        Box::new(f) as Box<dyn FnOnce(Req) -> Res>
-                    });
+                    let handler = interceptors.into_iter().fold(
+                        next_handler,
+                        move |next, mut interceptor| {
+                            let f = move |req: Req| {
+                                // SAFETY: this only fail if the downcast fails,
+                                // but we already checked that the type is correct
+                                interceptor.handle(req, next).unwrap()
+                            };
+                            Box::new(f) as Box<dyn FnOnce(Req) -> Res>
+                        },
+                    );
 
                     let res = handler(req);
                     return Ok(res);
@@ -611,30 +608,26 @@ impl Mediator for DefaultMediator {
                 None
             };
 
-            // TODO: Implement interceptors for streams
             #[cfg(feature = "interceptors")]
             {
-                let mut interceptors = self
-                    .interceptors
-                    .lock()
-                    .expect("Interceptors are locked");
+                let mut interceptors = self.interceptors.lock().expect("Interceptors are locked");
 
                 let key = InterceptorKey::of::<Req, S>();
                 if let Some(interceptors) = interceptors.get_mut(&key).cloned() {
-                    let next_handler: Box<dyn FnOnce(Req) -> S> = Box::new(move |req: Req| {
-                        handler.handle(req, mediator).unwrap()
-                    });
+                    let next_handler: Box<dyn FnOnce(Req) -> S> =
+                        Box::new(move |req: Req| handler.handle(req, mediator).unwrap());
 
-                    let handler = interceptors
-                        .into_iter()
-                        .fold(next_handler, move |next, mut interceptor| {
+                    let handler = interceptors.into_iter().fold(
+                        next_handler,
+                        move |next, mut interceptor| {
                             let f = move |req: Req| {
                                 // SAFETY: this only fail if the downcast fails,
                                 // but we already checked that the type is correct
                                 interceptor.stream(req, next).unwrap()
                             };
                             Box::new(f) as Box<dyn FnOnce(Req) -> S>
-                        });
+                        },
+                    );
 
                     let res = handler(req);
                     return Ok(res);
@@ -888,10 +881,10 @@ impl Builder {
     /// Adds a request interceptor.
     #[cfg(feature = "interceptors")]
     pub fn add_interceptor<Req, Res, H>(self, handler: H) -> Self
-        where
-            Req: 'static,
-            Res: 'static,
-            H: Interceptor<Req, Res> + Send + 'static,
+    where
+        Req: 'static,
+        Res: 'static,
+        H: Interceptor<Req, Res> + Send + 'static,
     {
         let req_ty = TypeId::of::<Req>();
         let res_ty = TypeId::of::<Res>();
@@ -907,10 +900,10 @@ impl Builder {
     /// Adds a request interceptor from a function.
     #[cfg(feature = "interceptors")]
     pub fn add_interceptor_fn<Req, Res, F>(self, f: F) -> Self
-        where
-            Req: 'static,
-            Res: 'static,
-            F: FnMut(Req, Box<dyn FnOnce(Req) -> Res>) -> Res + Send + 'static,
+    where
+        Req: 'static,
+        Res: 'static,
+        F: FnMut(Req, Box<dyn FnOnce(Req) -> Res>) -> Res + Send + 'static,
     {
         let req_ty = TypeId::of::<Req>();
         let res_ty = TypeId::of::<Res>();
@@ -925,10 +918,11 @@ impl Builder {
     /// Adds a stream request interceptor.
     #[cfg(feature = "streams")]
     pub fn add_interceptor_stream<Req, T, S, H>(self, handler: H) -> Self
-        where Req: StreamRequest<Stream = S, Item = T> + 'static,
-              S: Stream<Item = T> + 'static,
-              T: 'static,
-              H: StreamInterceptor<Request = Req, Stream = S, Item = T> + Send + 'static,
+    where
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static,
+        H: StreamInterceptor<Request = Req, Stream = S, Item = T> + Send + 'static,
     {
         let key = InterceptorKey::of::<Req, S>();
 
@@ -942,10 +936,11 @@ impl Builder {
     /// Adds a stream request interceptor from a function.
     #[cfg(feature = "streams")]
     pub fn add_interceptor_stream_fn<Req, T, S, F>(self, f: F) -> Self
-        where Req: StreamRequest<Stream = S, Item = T> + 'static,
-              S: Stream<Item = T> + 'static,
-              T: 'static,
-              F: FnMut(Req, Box<dyn FnOnce(Req) -> S>) -> S + Send + 'static,
+    where
+        Req: StreamRequest<Stream = S, Item = T> + 'static,
+        S: Stream<Item = T> + 'static,
+        T: 'static,
+        F: FnMut(Req, Box<dyn FnOnce(Req) -> S>) -> S + Send + 'static,
     {
         let key = InterceptorKey::of::<Req, S>();
         let mut handlers_lock = self.inner.interceptors.lock().unwrap();
@@ -979,14 +974,17 @@ impl Default for Builder {
 /// assert_send_sync(mediator);
 /// ```
 #[cfg(test)]
-fn _dummy(){
-    fn assert_send_sync<T: Send + Sync>(t: T) {}
+fn _dummy() {
+    fn assert_send_sync<T: Send + Sync>(_: T) {}
     assert_send_sync(DefaultMediator::builder().build());
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{box_stream, DefaultMediator, Event, EventHandler, Interceptor, Mediator, Request, RequestHandler, StreamInterceptor};
+    use crate::{
+        box_stream, DefaultMediator, Event, EventHandler, Interceptor, Mediator, Request,
+        RequestHandler, StreamInterceptor,
+    };
     use std::ops::Range;
     use std::sync::atomic::AtomicUsize;
     use std::sync::{Arc, Mutex};
@@ -1137,7 +1135,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature="interceptors")]
+    #[cfg(feature = "interceptors")]
     fn interceptor_test() {
         struct SumRequest(u32, u32);
         impl Request<u64> for SumRequest {}
@@ -1151,9 +1149,7 @@ mod tests {
         }
 
         let mut mediator = DefaultMediator::builder()
-            .add_handler(|req: SumRequest| {
-                (req.0 + req.1) as u64
-            })
+            .add_handler(|req: SumRequest| (req.0 + req.1) as u64)
             .add_interceptor(SumRequestInterceptor)
             .build();
 
@@ -1165,19 +1161,19 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature="interceptors")]
+    #[cfg(feature = "interceptors")]
     fn interceptor_fn_test() {
         struct SumRequest(u32, u32);
         impl Request<u64> for SumRequest {}
 
         let mut mediator = DefaultMediator::builder()
-            .add_handler(|req: SumRequest| {
-                (req.0 + req.1) as u64
-            })
-            .add_interceptor_fn(|req: SumRequest, next: Box<dyn FnOnce(SumRequest) -> u64>| {
-                let result = next(req);
-                result * 2
-            })
+            .add_handler(|req: SumRequest| (req.0 + req.1) as u64)
+            .add_interceptor_fn(
+                |req: SumRequest, next: Box<dyn FnOnce(SumRequest) -> u64>| {
+                    let result = next(req);
+                    result * 2
+                },
+            )
             .build();
 
         let r1 = mediator.send(SumRequest(1, 2)).unwrap();
@@ -1188,7 +1184,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    #[cfg(all(feature="interceptors", feature="streams"))]
+    #[cfg(all(feature = "interceptors", feature = "streams"))]
     async fn interceptor_stream_test() {
         struct CountRequest(u32);
         impl StreamRequest for CountRequest {
@@ -1202,16 +1198,18 @@ mod tests {
             type Stream = crate::futures::BoxStream<'static, u32>;
             type Item = u32;
 
-            fn handle_stream(&mut self, req: Self::Request, next: Box<dyn FnOnce(Self::Request) -> Self::Stream>) -> Self::Stream {
+            fn handle_stream(
+                &mut self,
+                req: Self::Request,
+                next: Box<dyn FnOnce(Self::Request) -> Self::Stream>,
+            ) -> Self::Stream {
                 let result = next(req);
                 Box::pin(result.map(|x| x * 2))
             }
         }
 
         let mut mediator = DefaultMediator::builder()
-            .add_stream_handler_fn(|req: CountRequest| {
-                Box::pin(crate::futures::iter(0..req.0))
-            })
+            .add_stream_handler_fn(|req: CountRequest| Box::pin(crate::futures::iter(0..req.0)))
             .add_interceptor_stream(CountRequestInterceptor)
             .build();
 
@@ -1220,7 +1218,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    #[cfg(all(feature="interceptors", feature="streams"))]
+    #[cfg(all(feature = "interceptors", feature = "streams"))]
     async fn interceptor_stream_fn_test() {
         struct CountRequest(u32);
         impl StreamRequest for CountRequest {
@@ -1229,9 +1227,7 @@ mod tests {
         }
 
         let mut mediator = DefaultMediator::builder()
-            .add_stream_handler_fn(|req: CountRequest| {
-                Box::pin(crate::futures::iter(1..=req.0))
-            })
+            .add_stream_handler_fn(|req: CountRequest| Box::pin(crate::futures::iter(1..=req.0)))
             .add_interceptor_stream_fn(|req: CountRequest, next| {
                 let result = next(req);
                 Box::pin(result.map(|x| x * 3))

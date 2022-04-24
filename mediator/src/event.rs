@@ -1,4 +1,3 @@
-
 /// Represents an application event.
 pub trait Event: Clone {}
 
