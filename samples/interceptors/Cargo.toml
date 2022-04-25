@@ -1,0 +1,14 @@
+[package]
+name = "interceptors"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+colored = []
+monochrome = []
+uppercase = []
+
+[dependencies]
+mediator = { path = "../../mediator", features = ["interceptors"] }
+crossterm = "0.23.2"
+ctrlc = "3.2.2"

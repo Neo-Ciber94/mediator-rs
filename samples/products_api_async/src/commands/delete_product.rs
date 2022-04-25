@@ -1,6 +1,6 @@
 use crate::events::ProductDeletedEvent;
-use crate::SharedRedisService;
 use crate::Product;
+use crate::SharedRedisService;
 use mediator::{AsyncMediator, AsyncRequestHandler, DefaultAsyncMediator, Request};
 use uuid::Uuid;
 

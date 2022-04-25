@@ -10,7 +10,10 @@ use {crate::futures::Stream, crate::StreamRequest};
 // }
 
 /// Provides a way to capture the requests.
-pub trait Interceptor<Req, Res> where Req: Request<Res> {
+pub trait Interceptor<Req, Res>
+where
+    Req: Request<Res>,
+{
     /// Handles the next request.
     fn handle(&mut self, req: Req, next: Box<dyn FnOnce(Req) -> Res>) -> Res;
 }
