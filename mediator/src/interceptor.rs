@@ -1,4 +1,5 @@
 use crate::futures::BoxFuture;
+use crate::Request;
 
 #[cfg(feature = "streams")]
 use {crate::futures::Stream, crate::StreamRequest};
@@ -9,7 +10,7 @@ use {crate::futures::Stream, crate::StreamRequest};
 // }
 
 /// Provides a way to capture the requests.
-pub trait Interceptor<Req, Res> {
+pub trait Interceptor<Req, Res> where Req: Request<Res> {
     /// Handles the next request.
     fn handle(&mut self, req: Req, next: Box<dyn FnOnce(Req) -> Res>) -> Res;
 }
@@ -39,7 +40,7 @@ pub trait StreamInterceptor {
 #[cfg_attr(feature = "async", async_trait::async_trait)]
 pub trait AsyncInterceptor<Req, Res>
 where
-    Req: Send,
+    Req: Request<Res> + Send,
 {
     /// Handles the next request.
     async fn handle(

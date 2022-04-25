@@ -1,9 +1,7 @@
 #![allow(irrefutable_let_patterns)]
 
 use crate::error::{Error, ErrorKind};
-use crate::{
-    AsyncEventHandler, AsyncMediator, AsyncRequestHandler, Event, Request,
-};
+use crate::{AsyncEventHandler, AsyncMediator, AsyncRequestHandler, Event, Request};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::future::Future;
@@ -21,9 +19,9 @@ use crate::AsyncStreamInterceptor;
 
 #[cfg(feature = "streams")]
 use {
-    std::sync::Mutex,
     crate::futures::Stream,
-    crate::{StreamRequestHandler, StreamRequest},
+    crate::{StreamRequest, StreamRequestHandler},
+    std::sync::Mutex,
 };
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -541,7 +539,7 @@ impl InterceptorWrapper {
     pub fn from_handler<Req, Res, H>(handler: H) -> Self
     where
         Res: Send + 'static,
-        Req: Send + 'static,
+        Req: Request<Res> + Send + 'static,
         H: AsyncInterceptor<Req, Res> + Send + 'static,
     {
         let handler = Arc::new(AsyncMutex::new(handler));
@@ -568,8 +566,8 @@ impl InterceptorWrapper {
 
     pub fn from_handler_fn<Req, Res, H>(handler: H) -> Self
     where
-        Req: Send + 'static,
         Res: Send + 'static,
+        Req: Request<Res> + Send + 'static,
         H: FnMut(Req, NextCallbackFut<Req, Res>) -> BoxFuture<'static, Res> + Send + 'static,
     {
         let handler = Arc::new(AsyncMutex::new(handler));
@@ -1283,8 +1281,8 @@ impl Builder {
     #[cfg(feature = "interceptors")]
     pub fn add_interceptor<Req, Res, F, H>(self, handler: H) -> Self
     where
-        Req: Send + 'static,
         Res: Send + 'static,
+        Req: Request<Res> + Send + 'static,
         H: AsyncInterceptor<Req, Res> + Send + 'static,
     {
         let req_ty = TypeId::of::<Req>();
@@ -1309,8 +1307,8 @@ impl Builder {
     #[cfg(feature = "interceptors")]
     pub fn add_interceptor_fn<Req, Res, H>(self, handler: H) -> Self
     where
-        Req: Send + 'static,
         Res: Send + 'static,
+        Req: Request<Res> + Send + 'static,
         H: FnMut(Req, NextCallbackFut<Req, Res>) -> BoxFuture<'static, Res> + Send + 'static,
     {
         let req_ty = TypeId::of::<Req>();

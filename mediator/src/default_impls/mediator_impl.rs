@@ -12,7 +12,7 @@ use crate::Interceptor;
 #[cfg(feature = "streams")]
 use {
     crate::futures::Stream,
-    crate::{StreamRequest, StreamRequestHandler}
+    crate::{StreamRequest, StreamRequestHandler},
 };
 
 #[cfg(all(feature = "interceptors", feature = "streams"))]
@@ -324,7 +324,7 @@ impl InterceptorWrapper {
     pub fn from_handler<Req, Res, H>(mut h: H) -> Self
     where
         Res: 'static,
-        Req: 'static,
+        Req: Request<Res> + 'static,
         H: Interceptor<Req, Res> + Send + 'static,
     {
         let f = move |req: Box<dyn Any>, next: NextCallback| -> Box<dyn Any> {
@@ -339,8 +339,8 @@ impl InterceptorWrapper {
 
     pub fn from_handler_fn<Req, Res, F>(mut f: F) -> Self
     where
-        Req: 'static,
         Res: 'static,
+        Req: Request<Res> + 'static,
         F: FnMut(Req, Box<dyn FnOnce(Req) -> Res>) -> Res + Send + 'static,
     {
         let f = move |req: Box<dyn Any>, next: NextCallback| -> Box<dyn Any> {
@@ -887,8 +887,8 @@ impl Builder {
     #[cfg(feature = "interceptors")]
     pub fn add_interceptor<Req, Res, H>(self, handler: H) -> Self
     where
-        Req: 'static,
         Res: 'static,
+        Req: Request<Res> + 'static,
         H: Interceptor<Req, Res> + Send + 'static,
     {
         let req_ty = TypeId::of::<Req>();
@@ -906,8 +906,8 @@ impl Builder {
     #[cfg(feature = "interceptors")]
     pub fn add_interceptor_fn<Req, Res, F>(self, f: F) -> Self
     where
-        Req: 'static,
         Res: 'static,
+        Req: Request<Res> + 'static,
         F: FnMut(Req, Box<dyn FnOnce(Req) -> Res>) -> Res + Send + 'static,
     {
         let req_ty = TypeId::of::<Req>();
